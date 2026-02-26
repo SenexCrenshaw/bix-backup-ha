@@ -1,0 +1,26 @@
+run_backup:
+  name: Run backup
+  description: Enqueue a backup execution for a job.
+  fields:
+    job_id:
+      required: true
+      selector:
+        text:
+
+ack_alert:
+  name: Acknowledge alert
+  description: Acknowledge an open alert.
+  fields:
+    alert_id:
+      required: true
+      selector:
+        text:
+
+resolve_alert:
+  name: Resolve alert
+  description: Resolve an open alert.
+  fields:
+    alert_id:
+      required: true
+      selector:
+        text:

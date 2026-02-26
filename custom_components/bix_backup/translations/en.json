@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to BIX Backup",
+        "description": "Provide your BIX controller URL and Home Assistant token.",
+        "data": {
+          "base_url": "Controller base URL",
+          "token": "Home Assistant token"
+        }
+      }
+    },
+    "error": {
+      "unauthorized": "Authentication failed. Check token.",
+      "cannot_connect": "Cannot reach the controller.",
+      "unsupported_schema": "Unsupported API schema version.",
+      "unknown": "Unexpected error."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BIX Backup options",
+        "data": {
+          "poll_fallback_seconds": "Poll fallback interval (seconds)",
+          "drift_poll_seconds": "Drift poll interval (seconds)",
+          "enable_host_entities": "Enable host entities",
+          "enable_job_entities": "Enable job entities",
+          "enable_alert_entities": "Enable alert entities",
+          "enable_action_buttons": "Enable action buttons"
+        }
+      }
+    }
+  }
+}
