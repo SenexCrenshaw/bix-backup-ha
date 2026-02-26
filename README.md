@@ -1,13 +1,13 @@
 # BIX Backup Home Assistant Integration (`bix_backup`)
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
-[![Validate](https://github.com/oneholly/bix-backup-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/oneholly/bix-backup-ha/actions/workflows/validate.yml)
-[![Hassfest](https://github.com/oneholly/bix-backup-ha/actions/workflows/hassfest.yml/badge.svg)](https://github.com/oneholly/bix-backup-ha/actions/workflows/hassfest.yml)
-[![Release](https://img.shields.io/github/v/release/oneholly/bix-backup-ha?display_name=tag)](https://github.com/oneholly/bix-backup-ha/releases)
+[![Validate](https://github.com/SenexCrenshaw/bix-backup-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/SenexCrenshaw/bix-backup-ha/actions/workflows/validate.yml)
+[![Hassfest](https://github.com/SenexCrenshaw/bix-backup-ha/actions/workflows/hassfest.yml/badge.svg)](https://github.com/SenexCrenshaw/bix-backup-ha/actions/workflows/hassfest.yml)
+[![Release](https://img.shields.io/github/v/release/SenexCrenshaw/bix-backup-ha?display_name=tag)](https://github.com/SenexCrenshaw/bix-backup-ha/releases)
 
 Private HACS-compatible integration for the BIX Backup controller.
 
-[![Open your Home Assistant instance and open this repository inside Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=oneholly&repository=bix-backup-ha)
+[![Open your Home Assistant instance and open this repository inside Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=SenexCrenshaw&repository=bix-backup-ha)
 
 ## Features
 
@@ -46,7 +46,7 @@ Private HACS-compatible integration for the BIX Backup controller.
 1. Settings -> Devices & Services -> Add Integration
 2. Search `BIX Backup`
 3. Enter:
-   - Controller base URL, for example `https://bixbackup.oneholly.com`
+   - Controller base URL, for example `https://bixbackup.example.com`
    - Home Assistant token from BIX UI
 
 ## Action semantics

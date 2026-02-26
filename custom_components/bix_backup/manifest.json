@@ -4,10 +4,10 @@
   "codeowners": ["@dbakker"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/oneholly/bix-backup-ha",
+  "documentation": "https://github.com/SenexCrenshaw/bix-backup-ha",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/oneholly/bix-backup-ha/issues",
+  "issue_tracker": "https://github.com/SenexCrenshaw/bix-backup-ha/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
