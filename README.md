@@ -7,7 +7,8 @@ Private HACS-compatible integration for BIX Backup controller.
 - Config flow + options flow
 - Reads discovery + state from controller HA endpoints
 - WS-first refresh (`/ws/ui`) with polling fallback
-- Host/job/alert entities
+- Host/job/alert entities (job entities use friendly plan names)
+- Backup metrics sensors (files processed, bytes processed, bytes added)
 - Per-job and per-alert action buttons (when enabled on controller)
 
 ## Required controller setup

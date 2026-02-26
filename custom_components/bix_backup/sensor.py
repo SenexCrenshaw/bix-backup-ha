@@ -49,6 +49,9 @@ async def async_setup_entry(
                     BixJobSensor(coordinator, job_id, "last_success_time", "Last Success Time"),
                     BixJobSensor(coordinator, job_id, "last_failure_time", "Last Failure Time"),
                     BixJobSensor(coordinator, job_id, "last_duration_ms", "Last Duration (ms)"),
+                    BixJobSensor(coordinator, job_id, "last_backup_total_files", "Last Backup Total Files"),
+                    BixJobSensor(coordinator, job_id, "last_backup_total_bytes", "Last Backup Total Bytes"),
+                    BixJobSensor(coordinator, job_id, "last_backup_data_added_bytes", "Last Backup Data Added"),
                     BixJobSensor(coordinator, job_id, "open_alert_count", "Open Alert Count"),
                 ]
             )
@@ -95,8 +98,11 @@ class BixJobSensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._job_id = job_id
         self._key = key
-        self._attr_name = f"BIX Job {job_id} {label}"
+        self._label = label
+        self._attr_name = f"BIX Job {coordinator.get_job_label(job_id)} {label}"
         self._attr_unique_id = f"bix_job_{job_id}_{key}"
+        if key in {"last_backup_total_bytes", "last_backup_data_added_bytes"}:
+            self._attr_native_unit_of_measurement = "B"
 
     @property
     def native_value(self) -> Any:
@@ -104,6 +110,10 @@ class BixJobSensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):
         if job is None:
             return None
         return job.get(self._key)
+
+    @property
+    def name(self) -> str | None:
+        return f"BIX Job {self.coordinator.get_job_label(self._job_id)} {self._label}"
 
     @property
     def available(self) -> bool:

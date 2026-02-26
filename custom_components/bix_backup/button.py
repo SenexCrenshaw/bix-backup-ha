@@ -38,7 +38,7 @@ class BixRunBackupButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     def __init__(self, coordinator: BixBackupCoordinator, job_id: str) -> None:
         super().__init__(coordinator)
         self._job_id = job_id
-        self._attr_name = f"BIX Job {job_id} Run Backup"
+        self._attr_name = f"BIX Job {coordinator.get_job_label(job_id)} Run Backup"
         self._attr_unique_id = f"bix_job_{job_id}_run_backup"
 
     @property
@@ -63,6 +63,10 @@ class BixRunBackupButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
                 {"action": "run_backup", "job_id": self._job_id, "error": str(err)},
             )
             raise HomeAssistantError(str(err)) from err
+
+    @property
+    def name(self) -> str | None:
+        return f"BIX Job {self.coordinator.get_job_label(self._job_id)} Run Backup"
 
 
 class BixAlertAckButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
@@ -95,6 +99,15 @@ class BixAlertAckButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
             )
             raise HomeAssistantError(str(err)) from err
 
+    @property
+    def name(self) -> str | None:
+        alert = self.coordinator.get_alert(self._alert_id)
+        if isinstance(alert, dict):
+            job_id = str(alert.get("job_id", "")).strip()
+            if job_id:
+                return f"BIX Alert {self.coordinator.get_job_label(job_id)} Acknowledge"
+        return f"BIX Alert {self._alert_id} Acknowledge"
+
 
 class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     def __init__(self, coordinator: BixBackupCoordinator, alert_id: str) -> None:
@@ -125,3 +138,12 @@ class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntit
                 {"action": "resolve", "alert_id": self._alert_id, "error": str(err)},
             )
             raise HomeAssistantError(str(err)) from err
+
+    @property
+    def name(self) -> str | None:
+        alert = self.coordinator.get_alert(self._alert_id)
+        if isinstance(alert, dict):
+            job_id = str(alert.get("job_id", "")).strip()
+            if job_id:
+                return f"BIX Alert {self.coordinator.get_job_label(job_id)} Resolve"
+        return f"BIX Alert {self._alert_id} Resolve"

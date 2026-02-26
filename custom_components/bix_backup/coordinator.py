@@ -172,6 +172,41 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return job
         return None
 
+    def get_job_name(self, job_id: str) -> str:
+        job = self.get_job(job_id)
+        if isinstance(job, dict):
+            name = str(job.get("job_name", "")).strip()
+            if name:
+                return name
+            repo_id = str(job.get("repo_id", "")).strip()
+            if repo_id:
+                return repo_id
+        inventory = self.discovery.get("inventory")
+        if isinstance(inventory, dict):
+            jobs = inventory.get("jobs", [])
+            if isinstance(jobs, list):
+                for rec in jobs:
+                    if not isinstance(rec, dict):
+                        continue
+                    if str(rec.get("job_id", "")).strip() != job_id:
+                        continue
+                    name = str(rec.get("job_name", "")).strip()
+                    if name:
+                        return name
+                    repo_id = str(rec.get("repo_id", "")).strip()
+                    if repo_id:
+                        return repo_id
+        return job_id
+
+    def get_job_label(self, job_id: str) -> str:
+        job = self.get_job(job_id)
+        name = self.get_job_name(job_id)
+        if isinstance(job, dict):
+            host_id = str(job.get("host_id", "")).strip()
+            if host_id:
+                return f"{name} ({host_id})"
+        return name
+
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         for item in self.data.get("alerts", []):
             if item.get("id") == alert_id:

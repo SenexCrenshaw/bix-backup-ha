@@ -63,7 +63,8 @@ class BixJobBinarySensor(CoordinatorEntity[BixBackupCoordinator], BinarySensorEn
         super().__init__(coordinator)
         self._job_id = job_id
         self._key = key
-        self._attr_name = f"BIX Job {job_id} {label}"
+        self._label = label
+        self._attr_name = f"BIX Job {coordinator.get_job_label(job_id)} {label}"
         self._attr_unique_id = f"bix_job_{job_id}_{key}"
 
     @property
@@ -77,3 +78,7 @@ class BixJobBinarySensor(CoordinatorEntity[BixBackupCoordinator], BinarySensorEn
     @property
     def available(self) -> bool:
         return super().available and self.coordinator.get_job(self._job_id) is not None
+
+    @property
+    def name(self) -> str | None:
+        return f"BIX Job {self.coordinator.get_job_label(self._job_id)} {self._label}"
