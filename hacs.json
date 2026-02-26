@@ -1,6 +1,6 @@
 {
   "name": "BIX Backup",
-  "domains": ["bix_backup"],
-  "homeassistant": "2026.2.0",
+  "zip_release": true,
+  "filename": "bix_backup.zip",
   "render_readme": true
 }

@@ -2,7 +2,6 @@
   "domain": "bix_backup",
   "name": "BIX Backup",
   "version": "0.1.0",
-  "homeassistant": "2026.2.0",
   "documentation": "https://github.com/oneholly/bix-backup-ha",
   "issue_tracker": "https://github.com/oneholly/bix-backup-ha/issues",
   "dependencies": [],

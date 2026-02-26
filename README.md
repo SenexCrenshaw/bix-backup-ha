@@ -20,7 +20,7 @@ Private HACS-compatible integration for the BIX Backup controller.
 
 ## HACS and versioning notes
 
-- Minimum supported Home Assistant version is `2026.2.0`.
+- Target Home Assistant version is `2026.2.0+`.
 - Required: keep `custom_components/bix_backup/manifest.json` `version` up to date.
 - This repo auto-creates a GitHub release/tag (`v<manifest version>`) when `manifest.json` version changes on `main`.
 - Recommended: publish GitHub releases (for example `v0.1.0`) that match the manifest version.
