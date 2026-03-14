@@ -1,3 +1,50 @@
+const HOST_KEYS = ["connected", "running", "last_seen"];
+const HOST_LABEL_SUFFIX = {
+  connected: " Connected",
+  running: " Running",
+  last_seen: " Last Seen",
+};
+const JOB_KEYS = [
+  "enabled",
+  "running",
+  "last_execution_status",
+  "last_execution_time",
+  "last_success_time",
+  "last_failure_time",
+  "last_duration_ms",
+  "last_backup_total_files",
+  "last_backup_total_bytes",
+  "last_backup_data_added_bytes",
+  "open_alert_count",
+];
+const JOB_LABEL_SUFFIX = {
+  enabled: " Enabled",
+  running: " Running",
+  last_execution_status: " Last Execution Status",
+  last_execution_time: " Last Execution Time",
+  last_success_time: " Last Success Time",
+  last_failure_time: " Last Failure Time",
+  last_duration_ms: " Last Duration (ms)",
+  last_backup_total_files: " Last Backup Total Files",
+  last_backup_total_bytes: " Last Backup Total Bytes",
+  last_backup_data_added_bytes: " Last Backup Data Added",
+  open_alert_count: " Open Alert Count",
+};
+const SUMMARY_ORDER = [
+  "sensor.bix_connected_hosts",
+  "sensor.bix_running_jobs",
+  "sensor.bix_failed_jobs_24h",
+  "sensor.bix_jobs_failed_24h",
+  "sensor.bix_open_alerts",
+  "sensor.bix_open_alerts_total",
+  "sensor.bix_open_critical_alerts",
+  "sensor.bix_open_alerts_critical",
+  "sensor.bix_open_warning_alerts",
+  "sensor.bix_open_alerts_warning",
+  "sensor.bix_open_info_alerts",
+  "sensor.bix_open_alerts_info",
+];
+
 class BixBackupPanel extends HTMLElement {
   constructor() {
     super();
@@ -6,6 +53,8 @@ class BixBackupPanel extends HTMLElement {
     this._panel = undefined;
     this._route = undefined;
     this._narrow = false;
+    this._renderToken = 0;
+    this._helpersPromise = undefined;
   }
 
   set hass(value) {
@@ -28,249 +77,360 @@ class BixBackupPanel extends HTMLElement {
     this._render();
   }
 
-  _bixStates() {
-    if (!this._hass || !this._hass.states) {
+  _allBixStates() {
+    if (!this._hass?.states) {
       return [];
     }
     return Object.entries(this._hass.states)
       .map(([entityId, stateObj]) => ({ entityId, stateObj }))
-      .filter(({ stateObj }) => {
-        const name = String(stateObj?.attributes?.friendly_name || "").trim();
-        return name.startsWith("BIX ");
+      .filter(({ entityId }) => entityId.includes(".bix_"));
+  }
+
+  _summaryEntities(states) {
+    const items = states
+      .filter(({ entityId }) => {
+        return (
+          entityId.startsWith("sensor.bix_") &&
+          !entityId.startsWith("sensor.bix_host_") &&
+          !entityId.startsWith("sensor.bix_job_")
+        );
       })
-      .sort((left, right) => {
-        const leftName = String(left.stateObj?.attributes?.friendly_name || left.entityId);
-        const rightName = String(right.stateObj?.attributes?.friendly_name || right.entityId);
-        return leftName.localeCompare(rightName);
-      });
-  }
-
-  _summaryStates(states) {
-    return states.filter(({ entityId, stateObj }) => {
-      const name = String(stateObj?.attributes?.friendly_name || "");
-      return entityId.startsWith("sensor.") && !name.startsWith("BIX Host ") && !name.startsWith("BIX Job ");
+      .map(({ entityId }) => entityId);
+    const order = new Map(SUMMARY_ORDER.map((entityId, index) => [entityId, index]));
+    return items.sort((left, right) => {
+      const leftRank = order.has(left) ? order.get(left) : SUMMARY_ORDER.length;
+      const rightRank = order.has(right) ? order.get(right) : SUMMARY_ORDER.length;
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+      return left.localeCompare(right);
     });
   }
 
-  _hostStates(states) {
-    return states.filter(({ stateObj }) => String(stateObj?.attributes?.friendly_name || "").startsWith("BIX Host "));
+  _parseGroupedEntity(entityId, prefix, knownKeys) {
+    if (!entityId.startsWith(`sensor.bix_${prefix}_`) && !entityId.startsWith(`binary_sensor.bix_${prefix}_`)) {
+      return undefined;
+    }
+    const domainSplit = entityId.split(".", 2);
+    if (domainSplit.length !== 2) {
+      return undefined;
+    }
+    const raw = domainSplit[1].slice(`bix_${prefix}_`.length);
+    const sortedKeys = [...knownKeys].sort((left, right) => right.length - left.length);
+    for (const key of sortedKeys) {
+      const suffix = `_${key}`;
+      if (raw.endsWith(suffix)) {
+        return {
+          groupId: raw.slice(0, -suffix.length),
+          key,
+        };
+      }
+    }
+    return undefined;
   }
 
-  _jobStates(states) {
-    return states.filter(({ stateObj }) => String(stateObj?.attributes?.friendly_name || "").startsWith("BIX Job "));
+  _groupLabel(prefix, groupId, key, friendlyName) {
+    const normalized = String(friendlyName || "").trim();
+    const suffixes = prefix === "host" ? HOST_LABEL_SUFFIX : JOB_LABEL_SUFFIX;
+    const expectedSuffix = suffixes[key];
+    if (normalized && expectedSuffix && normalized.endsWith(expectedSuffix)) {
+      return normalized.slice(0, -expectedSuffix.length).replace(/^BIX Host /, "").replace(/^BIX Job /, "").trim();
+    }
+    return groupId.replaceAll("_", " ");
   }
 
-  _alertButtons(states) {
-    return states.filter(({ entityId, stateObj }) => {
-      const name = String(stateObj?.attributes?.friendly_name || "");
-      return entityId.startsWith("button.") && name.startsWith("BIX Alert ");
-    });
+  _groupEntities(states, prefix, knownKeys) {
+    const groups = new Map();
+    for (const { entityId, stateObj } of states) {
+      const parsed = this._parseGroupedEntity(entityId, prefix, knownKeys);
+      if (!parsed) {
+        continue;
+      }
+      if (!groups.has(parsed.groupId)) {
+        groups.set(parsed.groupId, { label: undefined, entities: new Map() });
+      }
+      const group = groups.get(parsed.groupId);
+      group.entities.set(parsed.key, entityId);
+      if (!group.label) {
+        const friendlyName = String(stateObj?.attributes?.friendly_name || "").trim();
+        group.label = this._groupLabel(prefix, parsed.groupId, parsed.key, friendlyName);
+      }
+    }
+    return [...groups.entries()]
+      .map(([groupId, group]) => ({ groupId, label: group.label || groupId, entities: group.entities }))
+      .sort((left, right) => left.label.localeCompare(right.label));
   }
 
   _jobButtons(states) {
-    return states.filter(({ entityId, stateObj }) => {
-      const name = String(stateObj?.attributes?.friendly_name || "");
-      return entityId.startsWith("button.") && name.startsWith("BIX Job ");
+    return states
+      .filter(({ entityId }) => entityId.startsWith("button.bix_job_") && entityId.endsWith("_run_backup"))
+      .map(({ entityId, stateObj }) => ({
+        entityId,
+        label: String(stateObj?.attributes?.friendly_name || entityId),
+        available: String(stateObj?.state || "") !== "unavailable",
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  _alertButtons(states) {
+    return states
+      .filter(({ entityId }) => {
+        return (
+          entityId.startsWith("button.bix_alert_") &&
+          (entityId.endsWith("_ack") || entityId.endsWith("_resolve"))
+        );
+      })
+      .map(({ entityId, stateObj }) => ({
+        entityId,
+        label: String(stateObj?.attributes?.friendly_name || entityId),
+        available: String(stateObj?.state || "") !== "unavailable",
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }
+
+  _emptyCard(message) {
+    const card = document.createElement("ha-card");
+    const content = document.createElement("div");
+    content.className = "empty-card";
+    content.textContent = message;
+    card.appendChild(content);
+    return card;
+  }
+
+  async _createCard(config) {
+    if (!this._helpersPromise) {
+      const loadHelpers = window.loadCardHelpers;
+      this._helpersPromise =
+        typeof loadHelpers === "function" ? loadHelpers() : Promise.resolve(undefined);
+    }
+    const helpers = await this._helpersPromise;
+    if (helpers?.createCardElement) {
+      return helpers.createCardElement(config);
+    }
+    const fallback = document.createElement("ha-card");
+    const pre = document.createElement("pre");
+    pre.textContent = JSON.stringify(config, null, 2);
+    fallback.appendChild(pre);
+    return fallback;
+  }
+
+  _buttonGrid(title, items, columns) {
+    if (!items.length) {
+      return this._emptyCard(`No ${title.toLowerCase()} available.`);
+    }
+    return this._createCard({
+      type: "grid",
+        title,
+        square: false,
+        columns,
+        cards: items.map((item) => ({
+          type: "button",
+          entity: item.entityId,
+          name: item.label,
+          tap_action: { action: "call-service", service: "button.press", target: { entity_id: item.entityId } },
+          show_state: false,
+          icon_height: "22px",
+        })),
+      });
+  }
+
+  _entitiesCard(title, entities) {
+    if (!entities.length) {
+      return this._emptyCard(`No ${title.toLowerCase()} available.`);
+    }
+    return this._createCard({
+      type: "entities",
+      title,
+      show_header_toggle: false,
+      state_color: true,
+      entities,
     });
   }
 
-  async _press(entityId) {
-    if (!this._hass) {
-      return;
-    }
-    await this._hass.callService("button", "press", { entity_id: entityId });
-  }
-
-  _renderRows(states, options = {}) {
-    const asButtons = Boolean(options.buttons);
-    if (!states.length) {
-      return `<div class="empty">No items</div>`;
-    }
-    return states
-      .map(({ entityId, stateObj }) => {
-        const friendlyName = String(stateObj?.attributes?.friendly_name || entityId);
-        const value = String(stateObj?.state || "unknown");
-        if (asButtons) {
-          const disabled = value === "unavailable" ? "disabled" : "";
-          return `
-            <button class="action" data-entity-id="${entityId}" ${disabled}>
-              <span class="label">${friendlyName}</span>
-              <span class="meta">${entityId}</span>
-            </button>
-          `;
-        }
-        return `
-          <div class="row">
-            <div>
-              <div class="label">${friendlyName}</div>
-              <div class="meta">${entityId}</div>
-            </div>
-            <div class="value">${value}</div>
-          </div>
-        `;
-      })
-      .join("");
-  }
-
-  _render() {
+  async _render() {
     if (!this.shadowRoot) {
       return;
     }
 
-    const states = this._bixStates();
-    const summary = this._summaryStates(states);
-    const hosts = this._hostStates(states);
-    const jobs = this._jobStates(states);
-    const jobButtons = this._jobButtons(states);
-    const alertButtons = this._alertButtons(states);
+    const token = ++this._renderToken;
+    const title = this._panel?.config?.title || "BIX Backup";
 
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
           min-height: 100%;
-          background:
-            radial-gradient(circle at top left, rgba(64, 145, 108, 0.18), transparent 30%),
-            linear-gradient(180deg, #f6f7f3 0%, #eef2ea 100%);
-          color: #132018;
+          background: var(--lovelace-background, var(--primary-background-color));
+          color: var(--primary-text-color);
         }
-        .wrap {
-          max-width: 1200px;
+        .page {
+          max-width: 1440px;
           margin: 0 auto;
           padding: 24px 16px 40px;
         }
         .hero {
-          display: grid;
-          gap: 12px;
-          padding: 20px;
-          border-radius: 20px;
-          background: rgba(255, 255, 255, 0.82);
-          border: 1px solid rgba(19, 32, 24, 0.08);
-          box-shadow: 0 20px 40px rgba(19, 32, 24, 0.08);
+          margin-bottom: 20px;
         }
-        h1, h2 {
-          margin: 0;
+        .eyebrow {
+          color: var(--secondary-text-color);
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 8px;
         }
         h1 {
-          font-size: 28px;
+          margin: 0;
+          font-size: 32px;
           line-height: 1.1;
+          font-weight: 700;
         }
-        .sub {
-          color: #466052;
-          font-size: 14px;
+        .lede {
+          margin-top: 10px;
+          color: var(--secondary-text-color);
+          max-width: 860px;
+          line-height: 1.5;
         }
-        .grid {
-          display: grid;
-          gap: 16px;
-          margin-top: 20px;
-          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        .section {
+          margin-top: 24px;
         }
-        .card {
-          background: rgba(255, 255, 255, 0.9);
-          border: 1px solid rgba(19, 32, 24, 0.08);
-          border-radius: 18px;
-          padding: 16px;
-          box-shadow: 0 16px 30px rgba(19, 32, 24, 0.06);
-        }
-        .section-title {
-          font-size: 15px;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: #5a6f62;
-          margin-bottom: 12px;
-        }
-        .row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 16px;
-          padding: 10px 0;
-          border-top: 1px solid rgba(19, 32, 24, 0.08);
-        }
-        .row:first-of-type {
-          border-top: 0;
-          padding-top: 0;
-        }
-        .label {
+        .section h2 {
+          margin: 0 0 12px;
+          font-size: 18px;
+          line-height: 1.2;
           font-weight: 600;
-          line-height: 1.3;
         }
-        .meta {
-          color: #688071;
-          font-size: 12px;
-          line-height: 1.3;
-        }
-        .value {
-          font: 600 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-          padding: 6px 10px;
-          border-radius: 999px;
-          background: #e6efe8;
-          color: #193425;
-        }
-        .action {
-          width: 100%;
+        .cards {
           display: grid;
-          gap: 4px;
-          text-align: left;
-          margin: 0 0 10px;
-          padding: 14px;
-          border: 0;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #224f3a 0%, #3c7a58 100%);
-          color: white;
-          cursor: pointer;
+          gap: 16px;
         }
-        .action:last-of-type {
-          margin-bottom: 0;
+        .cards.columns-2 {
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
         }
-        .action .meta {
-          color: rgba(255, 255, 255, 0.75);
+        .cards.columns-3 {
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         }
-        .action:disabled {
-          background: #a6b8ae;
-          cursor: not-allowed;
+        .empty-card {
+          padding: 16px;
+          color: var(--secondary-text-color);
         }
-        .empty {
-          color: #688071;
-          font-size: 14px;
+        @media (max-width: 720px) {
+          .page {
+            padding: 16px 12px 32px;
+          }
+          h1 {
+            font-size: 26px;
+          }
         }
       </style>
-      <div class="wrap">
+      <div class="page">
         <div class="hero">
-          <h1>${this._panel?.config?.title || "BIX Backup"}</h1>
-          <div class="sub">
-            Dynamic Home Assistant view for BIX entities and actions.
-            ${this._narrow ? "Narrow mode enabled." : "Wide layout active."}
+          <div class="eyebrow">Home Assistant Panel</div>
+          <h1>${title}</h1>
+          <div class="lede">
+            Live controller summary, job actions, host health, and job status using native Home Assistant cards and theming.
           </div>
         </div>
-        <div class="grid">
-          <section class="card">
-            <div class="section-title">Summary</div>
-            ${this._renderRows(summary)}
-          </section>
-          <section class="card">
-            <div class="section-title">Job Actions</div>
-            ${this._renderRows(jobButtons, { buttons: true })}
-          </section>
-          <section class="card">
-            <div class="section-title">Alert Actions</div>
-            ${this._renderRows(alertButtons, { buttons: true })}
-          </section>
-          <section class="card">
-            <div class="section-title">Hosts</div>
-            ${this._renderRows(hosts)}
-          </section>
-          <section class="card">
-            <div class="section-title">Jobs</div>
-            ${this._renderRows(jobs)}
-          </section>
-        </div>
+        <section class="section">
+          <h2>Controller</h2>
+          <div class="cards columns-2" id="controller-cards"></div>
+        </section>
+        <section class="section">
+          <h2>Actions</h2>
+          <div class="cards columns-2" id="action-cards"></div>
+        </section>
+        <section class="section">
+          <h2>Hosts</h2>
+          <div class="cards columns-3" id="host-cards"></div>
+        </section>
+        <section class="section">
+          <h2>Jobs</h2>
+          <div class="cards columns-3" id="job-cards"></div>
+        </section>
       </div>
     `;
 
-    for (const button of this.shadowRoot.querySelectorAll("button[data-entity-id]")) {
-      button.addEventListener("click", () => this._press(button.dataset.entityId));
+    if (!this._hass?.states) {
+      return;
     }
+
+    const states = this._allBixStates();
+    const summaryEntities = this._summaryEntities(states);
+    const hostGroups = this._groupEntities(states, "host", HOST_KEYS);
+    const jobGroups = this._groupEntities(states, "job", JOB_KEYS);
+    const jobButtons = this._jobButtons(states);
+    const alertButtons = this._alertButtons(states);
+
+    const controllerCards =
+      summaryEntities.length === 0
+        ? [this._emptyCard("No BIX summary sensors detected.")]
+        : [
+            await this._createCard({
+              type: "glance",
+              title: "Backup Overview",
+              show_state: true,
+              show_name: true,
+              columns: this._narrow ? 2 : 4,
+              entities: summaryEntities,
+            }),
+            await this._createCard({
+              type: "entities",
+              title: "Controller Signals",
+              show_header_toggle: false,
+              entities: summaryEntities,
+            }),
+          ];
+
+    const actionCards = [
+      await this._buttonGrid("Run Backup", jobButtons, this._narrow ? 1 : 2),
+      await this._buttonGrid("Alert Actions", alertButtons, this._narrow ? 1 : 2),
+    ];
+
+    const hostCards =
+      hostGroups.length === 0
+        ? [this._emptyCard("No BIX hosts detected.")]
+        : await Promise.all(
+            hostGroups.map((group) =>
+              this._entitiesCard(
+                group.label,
+                HOST_KEYS.filter((key) => group.entities.has(key)).map((key) => group.entities.get(key))
+              )
+            )
+          );
+
+    const jobCards =
+      jobGroups.length === 0
+        ? [this._emptyCard("No BIX jobs detected.")]
+        : await Promise.all(
+            jobGroups.map((group) =>
+              this._entitiesCard(
+                group.label,
+                JOB_KEYS.filter((key) => group.entities.has(key)).map((key) => group.entities.get(key))
+              )
+            )
+          );
+
+    if (token !== this._renderToken) {
+      return;
+    }
+
+    const mount = (id, cards) => {
+      const target = this.shadowRoot.getElementById(id);
+      if (!target) {
+        return;
+      }
+      target.replaceChildren(...cards);
+      for (const card of cards) {
+        if (card && typeof card === "object" && "hass" in card) {
+          card.hass = this._hass;
+        }
+      }
+    };
+
+    mount("controller-cards", controllerCards);
+    mount("action-cards", actionCards);
+    mount("host-cards", hostCards);
+    mount("job-cards", jobCards);
   }
 }
 

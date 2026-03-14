@@ -15,8 +15,10 @@ class FrontendPanelTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('customElements.define("bix-backup-panel"', panel)
-        self.assertIn("Dynamic Home Assistant view for BIX entities and actions.", panel)
-        self.assertIn('this._hass.callService("button", "press"', panel)
+        self.assertIn("native Home Assistant cards and theming", panel)
+        self.assertIn('type: "entities"', panel)
+        self.assertIn('type: "button"', panel)
+        self.assertIn('type: "glance"', panel)
 
     def test_init_registers_panel_with_custom_panel_config_shape(self) -> None:
         init_py = (
