@@ -51,11 +51,11 @@ jobs:
       - name: Build release artifact
         if: steps.release_exists.outputs.exists == 'false'
         run: |
-          mkdir -p dist/custom_components
-          cp -R custom_components/bix_backup dist/custom_components/
+          mkdir -p dist/payload
+          cp -R custom_components/bix_backup/. dist/payload/
           (
-            cd dist
-            zip -r ../bix_backup.zip custom_components
+            cd dist/payload
+            zip -r ../../bix_backup.zip .
           )
 
       - name: Create GitHub release
