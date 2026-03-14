@@ -138,6 +138,10 @@ class BixAlertAckButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
                 return f"BIX Alert {self.coordinator.get_job_label(job_id)} Acknowledge"
         return f"BIX Alert {self._alert_id} Acknowledge"
 
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int] | None:
+        return _alert_attributes(self.coordinator.get_alert(self._alert_id), "ack")
+
 
 class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     def __init__(self, coordinator: BixBackupCoordinator, alert_id: str) -> None:
@@ -179,6 +183,28 @@ class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntit
             if job_id:
                 return f"BIX Alert {self.coordinator.get_job_label(job_id)} Resolve"
         return f"BIX Alert {self._alert_id} Resolve"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int] | None:
+        return _alert_attributes(self.coordinator.get_alert(self._alert_id), "resolve")
+
+
+def _alert_attributes(alert: dict[str, object] | None, action: str) -> dict[str, str | int] | None:
+    if not isinstance(alert, dict):
+        return None
+
+    attrs: dict[str, str | int] = {
+        "alert_id": str(alert.get("id", "")).strip(),
+        "action": action,
+    }
+    for key in ("job_id", "job_name", "type", "severity", "message", "first_seen_at", "last_seen_at", "last_execution_id"):
+        value = str(alert.get(key, "")).strip()
+        if value:
+            attrs[key] = value
+    count = alert.get("count")
+    if isinstance(count, int):
+        attrs["count"] = count
+    return attrs
 
 
 def _entity_key(entity: ButtonEntity) -> str:

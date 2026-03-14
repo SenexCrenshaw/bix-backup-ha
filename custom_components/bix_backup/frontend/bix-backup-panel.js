@@ -50,6 +50,14 @@ const CARD_TAG_BY_TYPE = {
   glance: "hui-glance-card",
   grid: "hui-grid-card",
 };
+const STATUS_ACCENT = {
+  success: "var(--success-color)",
+  succeeded: "var(--success-color)",
+  running: "var(--warning-color)",
+  failed: "var(--error-color)",
+  error: "var(--error-color)",
+  unknown: "var(--secondary-text-color)",
+};
 
 class BixBackupPanel extends HTMLElement {
   constructor() {
@@ -59,6 +67,7 @@ class BixBackupPanel extends HTMLElement {
     this._panel = undefined;
     this._route = undefined;
     this._narrow = false;
+    this._selectedJobId = undefined;
     this._renderToken = 0;
     this._helpersPromise = undefined;
   }
@@ -111,6 +120,16 @@ class BixBackupPanel extends HTMLElement {
       }
       return left.localeCompare(right);
     });
+  }
+
+  _stateValue(entityId) {
+    return this._hass?.states?.[entityId];
+  }
+
+  _entityStateText(entityId, fallback = "Unknown") {
+    const stateObj = this._stateValue(entityId);
+    const value = String(stateObj?.state || "").trim();
+    return value || fallback;
   }
 
   _parseGroupedEntity(entityId, prefix, knownKeys) {
@@ -167,6 +186,83 @@ class BixBackupPanel extends HTMLElement {
       .sort((left, right) => left.label.localeCompare(right.label));
   }
 
+  _groupEntityId(group, key) {
+    return group?.entities?.get(key);
+  }
+
+  _parseTimestamp(raw) {
+    const value = String(raw || "").trim();
+    if (!value || value === "unknown" || value === "unavailable") {
+      return undefined;
+    }
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? timestamp : undefined;
+  }
+
+  _countSuccessfulJobs24h(jobGroups) {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    let count = 0;
+    for (const group of jobGroups) {
+      const status = this._entityStateText(this._groupEntityId(group, "last_execution_status"), "").toLowerCase();
+      const successTs =
+        this._parseTimestamp(this._entityStateText(this._groupEntityId(group, "last_success_time"), "")) ??
+        this._parseTimestamp(this._entityStateText(this._groupEntityId(group, "last_execution_time"), ""));
+      if ((status === "success" || status === "succeeded") && successTs && successTs >= cutoff) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  _formatBytes(raw) {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) {
+      return "Unknown";
+    }
+    if (value < 1024) {
+      return `${value} B`;
+    }
+    const units = ["KB", "MB", "GB", "TB", "PB"];
+    let size = value;
+    let index = -1;
+    while (size >= 1024 && index < units.length - 1) {
+      size /= 1024;
+      index += 1;
+    }
+    return `${size.toFixed(size >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+  }
+
+  _formatDurationMs(raw) {
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+      return "Unknown";
+    }
+    const totalSeconds = Math.round(value / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+  }
+
+  _formatWhen(raw) {
+    const timestamp = this._parseTimestamp(raw);
+    if (!timestamp) {
+      return "Unknown";
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(timestamp));
+  }
+
   _jobButtons(states) {
     return states
       .filter(({ entityId }) => entityId.startsWith("button.bix_job_") && entityId.endsWith("_run_backup"))
@@ -194,6 +290,43 @@ class BixBackupPanel extends HTMLElement {
       .sort((left, right) => left.label.localeCompare(right.label));
   }
 
+  _alertsForJob(alertButtons, group) {
+    const alerts = new Map();
+    for (const button of alertButtons) {
+      const stateObj = this._stateValue(button.entityId);
+      const attrs = stateObj?.attributes || {};
+      const jobId = String(attrs.job_id || "").trim();
+      const alertId = String(attrs.alert_id || "").trim();
+      if (!jobId || !alertId || jobId !== group.groupId) {
+        continue;
+      }
+      if (!alerts.has(alertId)) {
+        alerts.set(alertId, {
+          id: alertId,
+          severity: String(attrs.severity || "info").trim(),
+          message: String(attrs.message || "No message").trim(),
+          count: Number(attrs.count || 0),
+          firstSeenAt: String(attrs.first_seen_at || "").trim(),
+          lastSeenAt: String(attrs.last_seen_at || "").trim(),
+          ackEntityId: undefined,
+          resolveEntityId: undefined,
+        });
+      }
+      const entry = alerts.get(alertId);
+      if (String(attrs.action || "").trim() === "ack") {
+        entry.ackEntityId = button.entityId;
+      }
+      if (String(attrs.action || "").trim() === "resolve") {
+        entry.resolveEntityId = button.entityId;
+      }
+    }
+    return [...alerts.values()].sort((left, right) => {
+      const leftTs = this._parseTimestamp(left.lastSeenAt) || 0;
+      const rightTs = this._parseTimestamp(right.lastSeenAt) || 0;
+      return rightTs - leftTs;
+    });
+  }
+
   _emptyCard(message) {
     const card = document.createElement("ha-card");
     const content = document.createElement("div");
@@ -201,6 +334,238 @@ class BixBackupPanel extends HTMLElement {
     content.textContent = message;
     card.appendChild(content);
     return card;
+  }
+
+  _overviewCard(jobGroups) {
+    const tiles = [
+      {
+        label: "Connected Hosts",
+        value: this._entityStateText("sensor.bix_connected_hosts", "0"),
+      },
+      {
+        label: "Running Jobs",
+        value: this._entityStateText("sensor.bix_running_jobs", "0"),
+      },
+      {
+        label: "Successful Jobs (24h)",
+        value: String(this._countSuccessfulJobs24h(jobGroups)),
+      },
+      {
+        label: "Failed Jobs (24h)",
+        value:
+          this._entityStateText("sensor.bix_failed_jobs_24h", "") ||
+          this._entityStateText("sensor.bix_jobs_failed_24h", "0"),
+      },
+      {
+        label: "Open Alerts",
+        value:
+          this._entityStateText("sensor.bix_open_alerts", "") ||
+          this._entityStateText("sensor.bix_open_alerts_total", "0"),
+      },
+    ];
+
+    const card = document.createElement("ha-card");
+    card.innerHTML = `
+      <div class="overview-card">
+        <div class="card-title">Backup Overview</div>
+        <div class="metric-grid">
+          ${tiles
+            .map(
+              (tile) => `
+                <div class="metric">
+                  <div class="metric-label">${tile.label}</div>
+                  <div class="metric-value">${tile.value}</div>
+                </div>
+              `
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  _jobSummaryCard(group) {
+    const status = this._entityStateText(this._groupEntityId(group, "last_execution_status"));
+    const running = this._entityStateText(this._groupEntityId(group, "running"), "").toLowerCase() === "on";
+    const effectiveStatus = running ? "running" : status;
+    const duration = this._formatDurationMs(this._entityStateText(this._groupEntityId(group, "last_duration_ms"), ""));
+    const totalBytes = this._formatBytes(
+      this._entityStateText(this._groupEntityId(group, "last_backup_total_bytes"), "")
+    );
+    const lastRun = this._formatWhen(this._entityStateText(this._groupEntityId(group, "last_execution_time"), ""));
+    const alerts = this._entityStateText(this._groupEntityId(group, "open_alert_count"), "0");
+    const statusColor = STATUS_ACCENT[String(effectiveStatus).toLowerCase()] || "var(--secondary-text-color)";
+    const selected = this._selectedJobId === group.groupId;
+
+    const card = document.createElement("ha-card");
+    card.classList.toggle("job-summary-card", true);
+    card.classList.toggle("selected", selected);
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.dataset.jobId = group.groupId;
+    card.setAttribute("aria-pressed", selected ? "true" : "false");
+    card.innerHTML = `
+      <div class="job-card">
+        <div class="job-top">
+          <div>
+            <div class="card-title">${group.label}</div>
+            <div class="job-subtitle">Last run ${lastRun} · Click for details</div>
+          </div>
+          <div class="status-pill" style="--status-color:${statusColor}">${effectiveStatus}</div>
+        </div>
+        <div class="metric-grid compact">
+          <div class="metric">
+            <div class="metric-label">Duration</div>
+            <div class="metric-value small">${duration}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Total Bytes</div>
+            <div class="metric-value small">${totalBytes}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Open Alerts</div>
+            <div class="metric-value small">${alerts}</div>
+          </div>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
+  _alertDetailCard(alert) {
+    const severity = String(alert.severity || "info").toLowerCase();
+    const severityColor = STATUS_ACCENT[severity] || "var(--primary-color)";
+    const countLabel = Number.isFinite(alert.count) && alert.count > 1 ? `${alert.count} hits` : "1 hit";
+
+    const card = document.createElement("ha-card");
+    card.innerHTML = `
+      <div class="alert-card">
+        <div class="alert-top">
+          <div class="status-pill" style="--status-color:${severityColor}">${severity}</div>
+          <div class="job-subtitle">Last seen ${this._formatWhen(alert.lastSeenAt)}</div>
+        </div>
+        <div class="alert-message">${alert.message || "No message"}</div>
+        <div class="alert-meta">
+          <span>${countLabel}</span>
+          <span>First seen ${this._formatWhen(alert.firstSeenAt)}</span>
+        </div>
+        <div class="alert-actions" data-alert-id="${alert.id}"></div>
+      </div>
+    `;
+    return card;
+  }
+
+  _syncSelectedJob(jobGroups) {
+    if (!jobGroups.length) {
+      this._selectedJobId = undefined;
+      return undefined;
+    }
+    if (!this._selectedJobId || !jobGroups.some((group) => group.groupId === this._selectedJobId)) {
+      this._selectedJobId = jobGroups[0].groupId;
+    }
+    return jobGroups.find((group) => group.groupId === this._selectedJobId) || jobGroups[0];
+  }
+
+  _selectJob(jobId) {
+    if (!jobId || this._selectedJobId === jobId) {
+      return;
+    }
+    this._selectedJobId = jobId;
+    this._render();
+  }
+
+  _jobButtonForGroup(jobButtons, group) {
+    return jobButtons.find((item) => item.entityId.startsWith(`button.bix_job_${group.groupId}_`));
+  }
+
+  async _selectedJobCards(group, jobButtons) {
+    if (!group) {
+      return [this._emptyCard("Select a BIX job to inspect its latest execution details.")];
+    }
+
+    const executionEntities = [
+      this._groupEntityId(group, "last_execution_status"),
+      this._groupEntityId(group, "last_execution_time"),
+      this._groupEntityId(group, "last_success_time"),
+      this._groupEntityId(group, "last_failure_time"),
+      this._groupEntityId(group, "last_duration_ms"),
+      this._groupEntityId(group, "running"),
+      this._groupEntityId(group, "enabled"),
+    ].filter(Boolean);
+    const metricEntities = [
+      this._groupEntityId(group, "last_backup_total_files"),
+      this._groupEntityId(group, "last_backup_total_bytes"),
+      this._groupEntityId(group, "last_backup_data_added_bytes"),
+      this._groupEntityId(group, "open_alert_count"),
+    ].filter(Boolean);
+
+    const cards = [
+      await this._entitiesCard(`${group.label} Execution`, executionEntities),
+      await this._entitiesCard(`${group.label} Metrics`, metricEntities),
+    ];
+
+    const runButton = this._jobButtonForGroup(jobButtons, group);
+    if (runButton) {
+      cards.push(
+        await this._createCard({
+          type: "button",
+          entity: runButton.entityId,
+          name: `Run ${group.label}`,
+          show_state: false,
+          tap_action: {
+            action: "call-service",
+            service: "button.press",
+            target: { entity_id: runButton.entityId },
+          },
+        })
+      );
+    }
+
+    return cards;
+  }
+
+  async _selectedJobAlertCards(group, alertButtons) {
+    if (!group) {
+      return [this._emptyCard("Select a BIX job to inspect recent alerts.")];
+    }
+
+    const alerts = this._alertsForJob(alertButtons, group);
+    if (!alerts.length) {
+      return [this._emptyCard(`No recent alerts for ${group.label}.`)];
+    }
+
+    const cards = alerts.map((alert) => this._alertDetailCard(alert));
+    for (let index = 0; index < alerts.length; index += 1) {
+      const alert = alerts[index];
+      const actionEntities = [alert.ackEntityId, alert.resolveEntityId].filter(Boolean);
+      if (!actionEntities.length) {
+        continue;
+      }
+      const actionsCard = await this._createCard({
+        type: "grid",
+        square: false,
+        columns: this._narrow ? 1 : 2,
+        cards: actionEntities.map((entityId) => ({
+          type: "button",
+          entity: entityId,
+          show_state: false,
+          tap_action: {
+            action: "call-service",
+            service: "button.press",
+            target: { entity_id: entityId },
+          },
+        })),
+      });
+      if (actionsCard && typeof actionsCard === "object" && "hass" in actionsCard) {
+        actionsCard.hass = this._hass;
+      }
+      const mount = cards[index].querySelector(".alert-actions");
+      if (mount) {
+        mount.replaceChildren(actionsCard);
+      }
+    }
+    return cards;
   }
 
   async _createCard(config) {
@@ -325,6 +690,102 @@ class BixBackupPanel extends HTMLElement {
         .cards.columns-3 {
           grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         }
+        .overview-card,
+        .job-card {
+          padding: 16px;
+        }
+        ha-card.job-summary-card {
+          cursor: pointer;
+          transition: box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease;
+          border: 1px solid transparent;
+        }
+        ha-card.job-summary-card:hover,
+        ha-card.job-summary-card:focus-visible {
+          transform: translateY(-1px);
+          box-shadow: var(--ha-card-box-shadow, 0 2px 4px rgba(0, 0, 0, 0.16));
+        }
+        ha-card.job-summary-card.selected {
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 1px var(--primary-color);
+        }
+        .card-title {
+          font-size: 16px;
+          font-weight: 600;
+          line-height: 1.2;
+        }
+        .metric-grid {
+          display: grid;
+          gap: 12px;
+          margin-top: 14px;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+        .metric-grid.compact {
+          grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        }
+        .metric {
+          padding: 12px;
+          border-radius: 12px;
+          background: var(--secondary-background-color);
+        }
+        .metric-label {
+          color: var(--secondary-text-color);
+          font-size: 12px;
+          line-height: 1.3;
+          margin-bottom: 6px;
+        }
+        .metric-value {
+          font-size: 26px;
+          font-weight: 700;
+          line-height: 1.1;
+        }
+        .metric-value.small {
+          font-size: 18px;
+        }
+        .job-top {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .job-subtitle {
+          margin-top: 6px;
+          color: var(--secondary-text-color);
+          font-size: 13px;
+        }
+        .status-pill {
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--status-color) 18%, transparent);
+          color: var(--status-color);
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+        }
+        .alert-card {
+          padding: 16px;
+        }
+        .alert-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+        }
+        .alert-message {
+          font-size: 15px;
+          line-height: 1.45;
+          margin-bottom: 12px;
+        }
+        .alert-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          color: var(--secondary-text-color);
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
         .empty-card {
           padding: 16px;
           color: var(--secondary-text-color);
@@ -362,6 +823,14 @@ class BixBackupPanel extends HTMLElement {
           <h2>Jobs</h2>
           <div class="cards columns-3" id="job-cards"></div>
         </section>
+        <section class="section">
+          <h2>Selected Plan</h2>
+          <div class="cards columns-3" id="selected-job-cards"></div>
+        </section>
+        <section class="section">
+          <h2>Recent Alerts</h2>
+          <div class="cards columns-3" id="selected-alert-cards"></div>
+        </section>
       </div>
     `;
 
@@ -373,28 +842,11 @@ class BixBackupPanel extends HTMLElement {
     const summaryEntities = this._summaryEntities(states);
     const hostGroups = this._groupEntities(states, "host", HOST_KEYS);
     const jobGroups = this._groupEntities(states, "job", JOB_KEYS);
+    const selectedJob = this._syncSelectedJob(jobGroups);
     const jobButtons = this._jobButtons(states);
     const alertButtons = this._alertButtons(states);
 
-    const controllerCards =
-      summaryEntities.length === 0
-        ? [this._emptyCard("No BIX summary sensors detected.")]
-        : [
-            await this._createCard({
-              type: "glance",
-              title: "Backup Overview",
-              show_state: true,
-              show_name: true,
-              columns: this._narrow ? 2 : 4,
-              entities: summaryEntities,
-            }),
-            await this._createCard({
-              type: "entities",
-              title: "Controller Signals",
-              show_header_toggle: false,
-              entities: summaryEntities,
-            }),
-          ];
+    const controllerCards = [this._overviewCard(jobGroups)];
 
     const actionCards = [
       await this._buttonGrid("Run Backup", jobButtons, this._narrow ? 1 : 2),
@@ -416,14 +868,9 @@ class BixBackupPanel extends HTMLElement {
     const jobCards =
       jobGroups.length === 0
         ? [this._emptyCard("No BIX jobs detected.")]
-        : await Promise.all(
-            jobGroups.map((group) =>
-              this._entitiesCard(
-                group.label,
-                JOB_KEYS.filter((key) => group.entities.has(key)).map((key) => group.entities.get(key))
-              )
-            )
-          );
+        : jobGroups.map((group) => this._jobSummaryCard(group));
+    const selectedJobCards = await this._selectedJobCards(selectedJob, jobButtons);
+    const selectedAlertCards = await this._selectedJobAlertCards(selectedJob, alertButtons);
 
     if (token !== this._renderToken) {
       return;
@@ -446,6 +893,19 @@ class BixBackupPanel extends HTMLElement {
     mount("action-cards", actionCards);
     mount("host-cards", hostCards);
     mount("job-cards", jobCards);
+    mount("selected-job-cards", selectedJobCards);
+    mount("selected-alert-cards", selectedAlertCards);
+
+    for (const card of this.shadowRoot.querySelectorAll("ha-card.job-summary-card[data-job-id]")) {
+      const activate = () => this._selectJob(card.dataset.jobId);
+      card.addEventListener("click", activate);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activate();
+        }
+      });
+    }
   }
 }
 
