@@ -32,6 +32,7 @@ Private HACS-compatible integration for the BIX Backup controller.
 - This repo auto-creates a GitHub release/tag (`v<manifest version>`) when `manifest.json` version changes on `main`.
 - Recommended: publish GitHub releases (for example `v0.1.0`) that match the manifest version.
 - If you want to submit this to the HACS default repository later, release-based installs and Home Assistant Brands assets become required.
+- Canonical cross-repo release checklist: `https://github.com/SenexCrenshaw/bix-backup/blob/main/docs/release-checklist.md`
 
 ## Required controller setup
 
@@ -56,6 +57,17 @@ Private HACS-compatible integration for the BIX Backup controller.
    - Controller base URL, for example `https://bixbackup.example.com`
    - Home Assistant token from BIX UI
 
+## V1 operator path
+
+1. Install or update from HACS
+2. Restart Home Assistant
+3. Add the `BIX Backup` integration from Devices & Services
+4. Verify entities appear and the `BIX Backup` sidebar panel loads
+5. Import the backup-finished blueprint and save one live automation
+6. Test one job action and, if enabled, one alert action
+7. Use the canonical cross-repo release checklist before publishing both repos:
+   `https://github.com/SenexCrenshaw/bix-backup/blob/main/docs/release-checklist.md`
+
 ## Action semantics
 
 - `Run Backup` -> `POST /api/integrations/home-assistant/actions/jobs/{job_id}/run-backup`
@@ -78,9 +90,14 @@ All action requests use `Authorization: Bearer <home_assistant_token>`.
 ## Automation example
 
 - A WhatsApp notification template for `backup finished` events is included at [examples/automation_whatsapp_backup_finished.yaml](/home/dbakker/git/bix-backup-ha/examples/automation_whatsapp_backup_finished.yaml).
-- Replace `replace_me` in the entity ids with your real BIX job slug from Home Assistant.
-- Replace `REPLACE_WITH_WHATSAPP_NUMBER` with the destination number supported by your HA WhatsApp integration.
+- The example file is a copy-paste starting point if you want to hand-edit entity ids.
 - A reusable automation blueprint is included at [blueprints/automation/bix_backup/whatsapp_backup_finished.yaml](/home/dbakker/git/bix-backup-ha/blueprints/automation/bix_backup/whatsapp_backup_finished.yaml).
 - The blueprint only needs the job's `last_execution_time` sensor plus a WhatsApp number; it derives the matching BIX status and metric sensors automatically.
 - Direct Home Assistant blueprint import URL:
   `https://raw.githubusercontent.com/senexcrenshaw/bix-backup-ha/main/blueprints/automation/bix_backup/whatsapp_backup_finished.yaml`
+
+## Release order
+
+1. Publish `bix-backup` when controller, UI, or API changes are ready.
+2. Validate this HA integration against the tagged controller build if either repo changed in HA-facing ways.
+3. Publish `bix-backup-ha` only after that compatibility check passes.
