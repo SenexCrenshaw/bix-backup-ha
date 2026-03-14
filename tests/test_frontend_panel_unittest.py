@@ -21,6 +21,8 @@ class FrontendPanelTests(unittest.TestCase):
         self.assertIn("Total Bytes", panel)
         self.assertIn("Selected Plan", panel)
         self.assertIn("Recent Alerts", panel)
+        self.assertIn("Host Health", panel)
+        self.assertIn("Likely host-side", panel)
         self.assertIn("Click for details", panel)
         self.assertIn("job-summary-card", panel)
         self.assertIn("_alertsForJob", panel)

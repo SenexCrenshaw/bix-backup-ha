@@ -96,6 +96,20 @@ class BixRunBackupButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     def name(self) -> str | None:
         return f"BIX Job {self.coordinator.get_job_label(self._job_id)} Run Backup"
 
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        job = self.coordinator.get_job(self._job_id)
+        if not isinstance(job, dict):
+            return None
+        attrs = {
+            "job_id": self._job_id,
+        }
+        for key in ("job_name", "host_id"):
+            value = str(job.get(key, "")).strip()
+            if value:
+                attrs[key] = value
+        return attrs
+
 
 class BixAlertAckButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     def __init__(self, coordinator: BixBackupCoordinator, alert_id: str) -> None:

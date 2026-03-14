@@ -18,6 +18,7 @@ class ButtonSourceTests(unittest.TestCase):
         self.assertIn('"severity"', source)
         self.assertIn('"message"', source)
         self.assertIn("extra_state_attributes", source)
+        self.assertIn('"host_id"', source)
 
 
 if __name__ == "__main__":

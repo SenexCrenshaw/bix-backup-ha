@@ -479,7 +479,64 @@ class BixBackupPanel extends HTMLElement {
     return jobButtons.find((item) => item.entityId.startsWith(`button.bix_job_${group.groupId}_`));
   }
 
-  async _selectedJobCards(group, jobButtons) {
+  _selectedJobHostGroup(group, jobButtons, hostGroups) {
+    const runButton = this._jobButtonForGroup(jobButtons, group);
+    const buttonAttrs = this._stateValue(runButton?.entityId)?.attributes || {};
+    const hostId = String(buttonAttrs.host_id || "").trim();
+    if (hostId) {
+      return hostGroups.find((hostGroup) => hostGroup.groupId === hostId);
+    }
+    return undefined;
+  }
+
+  _hostHealthCard(hostGroup, group) {
+    if (!hostGroup) {
+      return this._emptyCard(`No host details available for ${group.label}.`);
+    }
+
+    const connected = this._entityStateText(this._groupEntityId(hostGroup, "connected"), "unknown");
+    const running = this._entityStateText(this._groupEntityId(hostGroup, "running"), "unknown");
+    const lastSeen = this._formatWhen(this._entityStateText(this._groupEntityId(hostGroup, "last_seen"), ""));
+    const jobStatus = this._entityStateText(this._groupEntityId(group, "last_execution_status"), "").toLowerCase();
+
+    let hint = "Host looks healthy.";
+    if (connected !== "on") {
+      hint = "Likely host-side: the assigned host is not connected.";
+    } else if (running === "on") {
+      hint = "Host-side activity detected: this plan or another task is currently running on the host.";
+    } else if (jobStatus === "failed" || jobStatus === "error") {
+      hint = "Host is connected, so the failure is more likely controller-side, storage-side, or job config related.";
+    }
+
+    const card = document.createElement("ha-card");
+    card.innerHTML = `
+      <div class="overview-card">
+        <div class="card-title">Host Health</div>
+        <div class="metric-grid compact">
+          <div class="metric">
+            <div class="metric-label">Host</div>
+            <div class="metric-value small">${hostGroup.label}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Connected</div>
+            <div class="metric-value small">${connected}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Running</div>
+            <div class="metric-value small">${running}</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">Last Seen</div>
+            <div class="metric-value small">${lastSeen}</div>
+          </div>
+        </div>
+        <div class="job-subtitle" style="margin-top:12px;">${hint}</div>
+      </div>
+    `;
+    return card;
+  }
+
+  async _selectedJobCards(group, jobButtons, hostGroups) {
     if (!group) {
       return [this._emptyCard("Select a BIX job to inspect its latest execution details.")];
     }
@@ -501,6 +558,7 @@ class BixBackupPanel extends HTMLElement {
     ].filter(Boolean);
 
     const cards = [
+      this._hostHealthCard(this._selectedJobHostGroup(group, jobButtons, hostGroups), group),
       await this._entitiesCard(`${group.label} Execution`, executionEntities),
       await this._entitiesCard(`${group.label} Metrics`, metricEntities),
     ];
@@ -869,7 +927,7 @@ class BixBackupPanel extends HTMLElement {
       jobGroups.length === 0
         ? [this._emptyCard("No BIX jobs detected.")]
         : jobGroups.map((group) => this._jobSummaryCard(group));
-    const selectedJobCards = await this._selectedJobCards(selectedJob, jobButtons);
+    const selectedJobCards = await this._selectedJobCards(selectedJob, jobButtons, hostGroups);
     const selectedAlertCards = await this._selectedJobAlertCards(selectedJob, alertButtons);
 
     if (token !== this._renderToken) {
