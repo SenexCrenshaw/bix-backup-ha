@@ -12,11 +12,17 @@ Private HACS-compatible integration for the BIX Backup controller.
 ## Features
 
 - Config flow + options flow
-- Reads discovery + state from controller Home Assistant endpoints
-- WebSocket-first refresh (`/ws/ui`) with polling fallback
-- Host/job/alert entities (job entities use friendly plan names)
+- Uses only the dedicated controller Home Assistant contract:
+  - `GET /api/integrations/home-assistant/discovery`
+  - `GET /api/integrations/home-assistant/state`
+  - `POST /api/integrations/home-assistant/actions/...`
+  - `/ws/ui`
+- Treats discovery as the schema/capability source and state as the live runtime source
+- WebSocket-first refresh (`/ws/ui`) with discovery-driven polling fallback
+- Host/job/alert entities track live inventory, so new jobs and open alerts appear without reloading the integration
+- Job entities use `job_id`, `job_name`, and `host_id`; no repo-centric fields are expected
 - Backup metrics sensors (files processed, bytes processed, bytes added)
-- Per-job and per-alert action buttons (when enabled on controller)
+- Per-job and per-alert action buttons follow controller capabilities and integration options
 
 ## HACS and versioning notes
 
@@ -56,3 +62,14 @@ Private HACS-compatible integration for the BIX Backup controller.
 - `Resolve Alert` -> `POST /api/integrations/home-assistant/actions/alerts/{alert_id}/resolve`
 
 All action requests use `Authorization: Bearer <home_assistant_token>`.
+
+## Runtime behavior
+
+- Discovery `transport.supported_events` controls which `/ws/ui` events trigger refreshes.
+- Discovery `transport.poll_fallback_seconds` seeds the polling fallback interval unless you override it in integration options.
+- Discovery `capabilities.job_actions` and `capabilities.alert_actions` gate which action buttons are created.
+- Discovery `entity_catalog` controls which host/job fields become entities.
+- `enable_job_entities` controls job sensors and binary sensors.
+- `enable_host_entities` controls host sensors and binary sensors.
+- `enable_action_buttons` controls job run-backup buttons.
+- `enable_alert_entities` controls per-alert acknowledge and resolve buttons.

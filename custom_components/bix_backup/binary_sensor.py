@@ -8,6 +8,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import BixBackupCoordinator
+from .runtime_model import host_binary_keys, job_binary_keys, prettify_key, reconcile_ids
 
 
 async def async_setup_entry(
@@ -16,25 +17,47 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: BixBackupCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[BinarySensorEntity] = []
+    entities: dict[str, BinarySensorEntity] = {}
 
-    if coordinator.enable_host_entities:
-        for host in coordinator.data.get("hosts", []):
-            host_id = str(host.get("id", "")).strip()
-            if not host_id:
-                continue
-            entities.append(BixHostBinarySensor(coordinator, host_id, "connected", "Connected"))
-            entities.append(BixHostBinarySensor(coordinator, host_id, "running", "Running"))
+    def _sync_dynamic_entities() -> None:
+        desired_keys: set[str] = set()
+        new_entities: list[BinarySensorEntity] = []
 
-    if coordinator.enable_job_entities:
-        for job in coordinator.data.get("jobs", []):
-            job_id = str(job.get("job_id", "")).strip()
-            if not job_id:
-                continue
-            entities.append(BixJobBinarySensor(coordinator, job_id, "enabled", "Enabled"))
-            entities.append(BixJobBinarySensor(coordinator, job_id, "running", "Running"))
+        if coordinator.enable_host_entities:
+            for host_id in coordinator.desired_host_ids():
+                for key in host_binary_keys(coordinator.discovery):
+                    entity_key = f"host:{host_id}:{key}"
+                    desired_keys.add(entity_key)
+                    if entity_key in entities:
+                        continue
+                    new_entities.append(
+                        BixHostBinarySensor(coordinator, host_id, key, prettify_key(key))
+                    )
 
-    async_add_entities(entities)
+        if coordinator.enable_job_entities:
+            for job_id in coordinator.desired_job_ids():
+                for key in job_binary_keys(coordinator.discovery):
+                    entity_key = f"job:{job_id}:{key}"
+                    desired_keys.add(entity_key)
+                    if entity_key in entities:
+                        continue
+                    new_entities.append(
+                        BixJobBinarySensor(coordinator, job_id, key, prettify_key(key))
+                    )
+
+        if new_entities:
+            for entity in new_entities:
+                entities[_entity_key(entity)] = entity
+            async_add_entities(new_entities)
+
+        _, stale_keys = reconcile_ids(entities.keys(), desired_keys)
+        for stale_key in stale_keys:
+            entity = entities.pop(stale_key, None)
+            if entity is not None:
+                hass.async_create_task(entity.async_remove())
+
+    _sync_dynamic_entities()
+    entry.async_on_unload(coordinator.async_add_listener(_sync_dynamic_entities))
 
 
 class BixHostBinarySensor(CoordinatorEntity[BixBackupCoordinator], BinarySensorEntity):
@@ -82,3 +105,17 @@ class BixJobBinarySensor(CoordinatorEntity[BixBackupCoordinator], BinarySensorEn
     @property
     def name(self) -> str | None:
         return f"BIX Job {self.coordinator.get_job_label(self._job_id)} {self._label}"
+
+
+def _entity_key(entity: BinarySensorEntity) -> str:
+    unique_id = getattr(entity, "unique_id", None)
+    if isinstance(unique_id, str) and unique_id:
+        if unique_id.startswith("bix_host_"):
+            _, _, rest = unique_id.partition("bix_host_")
+            host_id, _, key = rest.rpartition("_")
+            return f"host:{host_id}:{key}"
+        if unique_id.startswith("bix_job_"):
+            _, _, rest = unique_id.partition("bix_job_")
+            job_id, _, key = rest.rpartition("_")
+            return f"job:{job_id}:{key}"
+    return getattr(entity, "entity_id", repr(entity))

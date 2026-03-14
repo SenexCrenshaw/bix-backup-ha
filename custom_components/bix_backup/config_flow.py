@@ -28,6 +28,7 @@ from .const import (
     OPT_ENABLE_JOB_ENTITIES,
     OPT_POLL_FALLBACK_SECONDS,
 )
+from .runtime_model import discovery_poll_fallback_seconds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,7 +85,9 @@ class BixBackupConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_TOKEN: token,
                     },
                     options={
-                        OPT_POLL_FALLBACK_SECONDS: DEFAULT_POLL_FALLBACK_SECONDS,
+                        OPT_POLL_FALLBACK_SECONDS: discovery_poll_fallback_seconds(
+                            discovery, DEFAULT_POLL_FALLBACK_SECONDS
+                        ),
                         OPT_DRIFT_POLL_SECONDS: DEFAULT_DRIFT_POLL_SECONDS,
                         OPT_ENABLE_HOST_ENTITIES: DEFAULT_ENABLE_HOST_ENTITIES,
                         OPT_ENABLE_JOB_ENTITIES: DEFAULT_ENABLE_JOB_ENTITIES,
@@ -112,16 +115,33 @@ class BixBackupOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
 
+    async def _poll_fallback_default(self) -> int:
+        existing = self._config_entry.options.get(OPT_POLL_FALLBACK_SECONDS)
+        if existing is not None:
+            return int(existing)
+
+        session = async_get_clientsession(self.hass)
+        try:
+            discovery = await _validate_connection(
+                session,
+                _normalize_base_url(str(self._config_entry.data[CONF_BASE_URL])),
+                str(self._config_entry.data[CONF_TOKEN]).strip(),
+            )
+        except (ValueError, aiohttp.ClientError, TimeoutError):
+            return DEFAULT_POLL_FALLBACK_SECONDS
+        return discovery_poll_fallback_seconds(discovery, DEFAULT_POLL_FALLBACK_SECONDS)
+
     async def async_step_init(self, user_input: Mapping[str, Any] | None = None):
         if user_input is not None:
             return self.async_create_entry(title="", data=dict(user_input))
 
         options = self._config_entry.options
+        poll_fallback_default = await self._poll_fallback_default()
         schema = vol.Schema(
             {
                 vol.Required(
                     OPT_POLL_FALLBACK_SECONDS,
-                    default=options.get(OPT_POLL_FALLBACK_SECONDS, DEFAULT_POLL_FALLBACK_SECONDS),
+                    default=poll_fallback_default,
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=3600)),
                 vol.Required(
                     OPT_DRIFT_POLL_SECONDS,

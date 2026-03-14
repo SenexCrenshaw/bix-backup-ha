@@ -9,6 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import BixBackupCoordinator
+from .runtime_model import reconcile_ids
 
 
 async def async_setup_entry(
@@ -17,21 +18,46 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: BixBackupCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[ButtonEntity] = []
+    entities: dict[str, ButtonEntity] = {}
 
-    if coordinator.enable_action_buttons and coordinator.actions_capable:
-        for job in coordinator.data.get("jobs", []):
-            job_id = str(job.get("job_id", "")).strip()
-            if job_id:
-                entities.append(BixRunBackupButton(coordinator, job_id))
-        for alert in coordinator.data.get("alerts", []):
-            alert_id = str(alert.get("id", "")).strip()
-            if not alert_id:
-                continue
-            entities.append(BixAlertAckButton(coordinator, alert_id))
-            entities.append(BixAlertResolveButton(coordinator, alert_id))
+    def _sync_dynamic_entities() -> None:
+        desired_keys: set[str] = set()
+        new_entities: list[ButtonEntity] = []
 
-    async_add_entities(entities)
+        if coordinator.enable_action_buttons and coordinator.supports_job_action("run_backup"):
+            for job_id in coordinator.desired_job_ids():
+                entity_key = f"job:{job_id}:run_backup"
+                desired_keys.add(entity_key)
+                if entity_key in entities:
+                    continue
+                new_entities.append(BixRunBackupButton(coordinator, job_id))
+
+        if coordinator.enable_action_buttons and coordinator.enable_alert_entities:
+            for alert_id in coordinator.desired_alert_ids():
+                if coordinator.supports_alert_action("ack"):
+                    entity_key = f"alert:{alert_id}:ack"
+                    desired_keys.add(entity_key)
+                    if entity_key not in entities:
+                        new_entities.append(BixAlertAckButton(coordinator, alert_id))
+                if coordinator.supports_alert_action("resolve"):
+                    entity_key = f"alert:{alert_id}:resolve"
+                    desired_keys.add(entity_key)
+                    if entity_key not in entities:
+                        new_entities.append(BixAlertResolveButton(coordinator, alert_id))
+
+        if new_entities:
+            for entity in new_entities:
+                entities[_entity_key(entity)] = entity
+            async_add_entities(new_entities)
+
+        _, stale_keys = reconcile_ids(entities.keys(), desired_keys)
+        for stale_key in stale_keys:
+            entity = entities.pop(stale_key, None)
+            if entity is not None:
+                hass.async_create_task(entity.async_remove())
+
+    _sync_dynamic_entities()
+    entry.async_on_unload(coordinator.async_add_listener(_sync_dynamic_entities))
 
 
 class BixRunBackupButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
@@ -44,6 +70,8 @@ class BixRunBackupButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     @property
     def available(self) -> bool:
         if not super().available:
+            return False
+        if not self.coordinator.supports_job_action("run_backup"):
             return False
         job = self.coordinator.get_job(self._job_id)
         if job is None:
@@ -79,6 +107,8 @@ class BixAlertAckButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntity):
     @property
     def available(self) -> bool:
         if not super().available:
+            return False
+        if not self.coordinator.supports_alert_action("ack"):
             return False
         alert = self.coordinator.get_alert(self._alert_id)
         if alert is None:
@@ -120,6 +150,8 @@ class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntit
     def available(self) -> bool:
         if not super().available:
             return False
+        if not self.coordinator.supports_alert_action("resolve"):
+            return False
         alert = self.coordinator.get_alert(self._alert_id)
         if alert is None:
             return False
@@ -147,3 +179,18 @@ class BixAlertResolveButton(CoordinatorEntity[BixBackupCoordinator], ButtonEntit
             if job_id:
                 return f"BIX Alert {self.coordinator.get_job_label(job_id)} Resolve"
         return f"BIX Alert {self._alert_id} Resolve"
+
+
+def _entity_key(entity: ButtonEntity) -> str:
+    unique_id = getattr(entity, "unique_id", None)
+    if isinstance(unique_id, str) and unique_id:
+        if unique_id.startswith("bix_job_") and unique_id.endswith("_run_backup"):
+            job_id = unique_id[len("bix_job_") : -len("_run_backup")]
+            return f"job:{job_id}:run_backup"
+        if unique_id.startswith("bix_alert_") and unique_id.endswith("_ack"):
+            alert_id = unique_id[len("bix_alert_") : -len("_ack")]
+            return f"alert:{alert_id}:ack"
+        if unique_id.startswith("bix_alert_") and unique_id.endswith("_resolve"):
+            alert_id = unique_id[len("bix_alert_") : -len("_resolve")]
+            return f"alert:{alert_id}:resolve"
+    return getattr(entity, "entity_id", repr(entity))

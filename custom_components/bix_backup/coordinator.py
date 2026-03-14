@@ -30,7 +30,18 @@ from .const import (
     OPT_ENABLE_JOB_ENTITIES,
     OPT_POLL_FALLBACK_SECONDS,
     STATE_PATH,
-    SUPPORTED_WS_EVENTS,
+)
+from .runtime_model import (
+    actions_enabled,
+    desired_alert_ids,
+    desired_host_ids,
+    desired_job_ids,
+    discovery_alert_actions,
+    discovery_job_actions,
+    discovery_poll_fallback_seconds,
+    job_label,
+    job_name,
+    supported_ws_events,
 )
 from .ws_client import BixWsClient
 
@@ -95,6 +106,8 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.discovery: dict[str, Any] = {}
         self.ws_connected = False
         self._ws_client: BixWsClient | None = None
+        self._supported_ws_events = supported_ws_events({})
+        self._discovery_poll_fallback_seconds = DEFAULT_POLL_FALLBACK_SECONDS
 
         self.poll_fallback_seconds = int(
             entry.options.get(OPT_POLL_FALLBACK_SECONDS, DEFAULT_POLL_FALLBACK_SECONDS)
@@ -120,13 +133,23 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def actions_capable(self) -> bool:
-        capabilities = self.discovery.get("capabilities")
-        if not isinstance(capabilities, dict):
-            return False
-        return bool(capabilities.get("actions_enabled"))
+        return actions_enabled(self.discovery)
+
+    def supports_job_action(self, action: str) -> bool:
+        return self.actions_capable and action in discovery_job_actions(self.discovery)
+
+    def supports_alert_action(self, action: str) -> bool:
+        return self.actions_capable and action in discovery_alert_actions(self.discovery)
 
     async def async_initialize(self) -> None:
         self.discovery = await self.api.fetch_discovery()
+        self._supported_ws_events = supported_ws_events(self.discovery)
+        self._discovery_poll_fallback_seconds = discovery_poll_fallback_seconds(
+            self.discovery, DEFAULT_POLL_FALLBACK_SECONDS
+        )
+        self.poll_fallback_seconds = int(
+            self.entry.options.get(OPT_POLL_FALLBACK_SECONDS, self._discovery_poll_fallback_seconds)
+        )
         ws_url = str(self.discovery.get("transport", {}).get("ws_url", "")).strip()
         if ws_url:
             self._ws_client = BixWsClient(
@@ -144,14 +167,26 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._ws_client = None
 
     async def _handle_ws_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        if event_type not in SUPPORTED_WS_EVENTS:
+        if event_type not in self._supported_ws_events:
             return
         _LOGGER.debug("BIX WS event: %s", payload)
+        if event_type == "config":
+            try:
+                self.discovery = await self.api.fetch_discovery()
+                self._supported_ws_events = supported_ws_events(self.discovery)
+                self._discovery_poll_fallback_seconds = discovery_poll_fallback_seconds(
+                    self.discovery, self._discovery_poll_fallback_seconds
+                )
+            except Exception as err:  # pragma: no cover - defensive network path
+                _LOGGER.debug("BIX discovery refresh failed: %s", err)
         self.hass.async_create_task(self.async_request_refresh())
 
     async def _handle_ws_status(self, connected: bool) -> None:
         self.ws_connected = connected
-        next_interval = self.drift_poll_seconds if connected else self.poll_fallback_seconds
+        fallback_seconds = int(
+            self.entry.options.get(OPT_POLL_FALLBACK_SECONDS, self._discovery_poll_fallback_seconds)
+        )
+        next_interval = self.drift_poll_seconds if connected else fallback_seconds
         self.update_interval = timedelta(seconds=next_interval)
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -173,39 +208,10 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None
 
     def get_job_name(self, job_id: str) -> str:
-        job = self.get_job(job_id)
-        if isinstance(job, dict):
-            name = str(job.get("job_name", "")).strip()
-            if name:
-                return name
-            repo_id = str(job.get("repo_id", "")).strip()
-            if repo_id:
-                return repo_id
-        inventory = self.discovery.get("inventory")
-        if isinstance(inventory, dict):
-            jobs = inventory.get("jobs", [])
-            if isinstance(jobs, list):
-                for rec in jobs:
-                    if not isinstance(rec, dict):
-                        continue
-                    if str(rec.get("job_id", "")).strip() != job_id:
-                        continue
-                    name = str(rec.get("job_name", "")).strip()
-                    if name:
-                        return name
-                    repo_id = str(rec.get("repo_id", "")).strip()
-                    if repo_id:
-                        return repo_id
-        return job_id
+        return job_name(job_id, self.data, self.discovery)
 
     def get_job_label(self, job_id: str) -> str:
-        job = self.get_job(job_id)
-        name = self.get_job_name(job_id)
-        if isinstance(job, dict):
-            host_id = str(job.get("host_id", "")).strip()
-            if host_id:
-                return f"{name} ({host_id})"
-        return name
+        return job_label(job_id, self.data, self.discovery)
 
     def get_alert(self, alert_id: str) -> dict[str, Any] | None:
         for item in self.data.get("alerts", []):
@@ -214,7 +220,7 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return None
 
     async def async_run_backup(self, job_id: str) -> dict[str, Any]:
-        if not self.actions_capable or not self.enable_action_buttons:
+        if not self.supports_job_action("run_backup") or not self.enable_action_buttons:
             raise HomeAssistantError("BIX actions are disabled")
         path = f"{ACTIONS_BASE_PATH}/jobs/{job_id}/run-backup"
         payload = await self.api.post_action(path)
@@ -222,7 +228,7 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return payload
 
     async def async_ack_alert(self, alert_id: str) -> dict[str, Any]:
-        if not self.actions_capable or not self.enable_action_buttons:
+        if not self.supports_alert_action("ack") or not self.enable_action_buttons or not self.enable_alert_entities:
             raise HomeAssistantError("BIX actions are disabled")
         path = f"{ACTIONS_BASE_PATH}/alerts/{alert_id}/ack"
         payload = await self.api.post_action(path)
@@ -230,9 +236,22 @@ class BixBackupCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return payload
 
     async def async_resolve_alert(self, alert_id: str) -> dict[str, Any]:
-        if not self.actions_capable or not self.enable_action_buttons:
+        if (
+            not self.supports_alert_action("resolve")
+            or not self.enable_action_buttons
+            or not self.enable_alert_entities
+        ):
             raise HomeAssistantError("BIX actions are disabled")
         path = f"{ACTIONS_BASE_PATH}/alerts/{alert_id}/resolve"
         payload = await self.api.post_action(path)
         await self.async_request_refresh()
         return payload
+
+    def desired_host_ids(self) -> tuple[str, ...]:
+        return desired_host_ids(self.data)
+
+    def desired_job_ids(self) -> tuple[str, ...]:
+        return desired_job_ids(self.data)
+
+    def desired_alert_ids(self) -> tuple[str, ...]:
+        return desired_alert_ids(self.data)
