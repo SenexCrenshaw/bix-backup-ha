@@ -19,6 +19,9 @@ class FrontendPanelTests(unittest.TestCase):
         self.assertIn('type: "entities"', panel)
         self.assertIn('type: "button"', panel)
         self.assertIn('type: "glance"', panel)
+        self.assertIn('const CARD_TAG_BY_TYPE = {', panel)
+        self.assertIn('"hui-entities-card"', panel)
+        self.assertIn("customElements.whenDefined(tagName)", panel)
 
     def test_init_registers_panel_with_custom_panel_config_shape(self) -> None:
         init_py = (

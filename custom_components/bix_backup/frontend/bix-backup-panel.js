@@ -44,6 +44,12 @@ const SUMMARY_ORDER = [
   "sensor.bix_open_info_alerts",
   "sensor.bix_open_alerts_info",
 ];
+const CARD_TAG_BY_TYPE = {
+  button: "hui-button-card",
+  entities: "hui-entities-card",
+  glance: "hui-glance-card",
+  grid: "hui-grid-card",
+};
 
 class BixBackupPanel extends HTMLElement {
   constructor() {
@@ -206,6 +212,15 @@ class BixBackupPanel extends HTMLElement {
     const helpers = await this._helpersPromise;
     if (helpers?.createCardElement) {
       return helpers.createCardElement(config);
+    }
+    const tagName = CARD_TAG_BY_TYPE[config?.type];
+    if (tagName) {
+      await customElements.whenDefined(tagName);
+      const card = document.createElement(tagName);
+      if (typeof card.setConfig === "function") {
+        card.setConfig(config);
+      }
+      return card;
     }
     const fallback = document.createElement("ha-card");
     const pre = document.createElement("pre");
