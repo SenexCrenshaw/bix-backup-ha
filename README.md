@@ -82,3 +82,5 @@ All action requests use `Authorization: Bearer <home_assistant_token>`.
 - Replace `REPLACE_WITH_WHATSAPP_NUMBER` with the destination number supported by your HA WhatsApp integration.
 - A reusable automation blueprint is included at [blueprints/automation/bix_backup/whatsapp_backup_finished.yaml](/home/dbakker/git/bix-backup-ha/blueprints/automation/bix_backup/whatsapp_backup_finished.yaml).
 - The blueprint only needs the job's `last_execution_time` sensor plus a WhatsApp number; it derives the matching BIX status and metric sensors automatically.
+- Direct Home Assistant blueprint import URL:
+  `https://raw.githubusercontent.com/senexcrenshaw/bix-backup-ha/main/blueprints/automation/bix_backup/whatsapp_backup_finished.yaml`
