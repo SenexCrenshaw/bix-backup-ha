@@ -142,6 +142,13 @@ class RuntimeModelTests(unittest.TestCase):
         self.assertEqual(runtime_model.job_name("job-b", STATE_PAYLOAD, DISCOVERY_PAYLOAD), "Weekly")
         self.assertEqual(runtime_model.job_label("job-b", STATE_PAYLOAD, DISCOVERY_PAYLOAD), "Weekly (host-2)")
 
+    def test_entity_keys_preserve_full_metric_names(self) -> None:
+        self.assertEqual(runtime_model.host_entity_key("host-1", "last_seen"), "host:host-1:last_seen")
+        self.assertEqual(
+            runtime_model.job_entity_key("job-a", "last_execution_status"),
+            "job:job-a:last_execution_status",
+        )
+
     def test_helpers_tolerate_missing_sections(self) -> None:
         self.assertEqual(runtime_model.supported_ws_events({}), ("host", "job", "alerts", "config"))
         self.assertEqual(runtime_model.discovery_poll_fallback_seconds({}, 30), 30)

@@ -10,7 +10,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import BixBackupCoordinator
-from .runtime_model import host_sensor_keys, job_sensor_keys, prettify_key, reconcile_ids, summary_sensor_keys
+from .runtime_model import (
+    host_entity_key,
+    host_sensor_keys,
+    job_entity_key,
+    job_sensor_keys,
+    prettify_key,
+    reconcile_ids,
+    summary_sensor_keys,
+)
 
 SUMMARY_LABELS = {
     "connected_hosts": "Connected Hosts",
@@ -58,7 +66,7 @@ async def async_setup_entry(
         if coordinator.enable_host_entities:
             for host_id in coordinator.desired_host_ids():
                 for key in host_sensor_keys(coordinator.discovery):
-                    entity_key = f"host:{host_id}:{key}"
+                    entity_key = host_entity_key(host_id, key)
                     desired_keys.add(entity_key)
                     if entity_key in entities:
                         continue
@@ -69,7 +77,7 @@ async def async_setup_entry(
         if coordinator.enable_job_entities:
             for job_id in coordinator.desired_job_ids():
                 for key in job_sensor_keys(coordinator.discovery):
-                    entity_key = f"job:{job_id}:{key}"
+                    entity_key = job_entity_key(job_id, key)
                     desired_keys.add(entity_key)
                     if entity_key in entities:
                         continue
@@ -160,14 +168,11 @@ class BixJobSensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):
 
 
 def _entity_key(entity: SensorEntity) -> str:
-    unique_id = getattr(entity, "unique_id", None)
-    if isinstance(unique_id, str) and unique_id:
-        if unique_id.startswith("bix_host_"):
-            _, _, rest = unique_id.partition("bix_host_")
-            host_id, _, key = rest.rpartition("_")
-            return f"host:{host_id}:{key}"
-        if unique_id.startswith("bix_job_"):
-            _, _, rest = unique_id.partition("bix_job_")
-            job_id, _, key = rest.rpartition("_")
-            return f"job:{job_id}:{key}"
+    host_id = getattr(entity, "_host_id", None)
+    key = getattr(entity, "_key", None)
+    if isinstance(host_id, str) and isinstance(key, str):
+        return host_entity_key(host_id, key)
+    job_id = getattr(entity, "_job_id", None)
+    if isinstance(job_id, str) and isinstance(key, str):
+        return job_entity_key(job_id, key)
     return getattr(entity, "entity_id", repr(entity))

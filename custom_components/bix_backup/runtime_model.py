@@ -144,6 +144,14 @@ def desired_alert_ids(state: dict[str, Any]) -> tuple[str, ...]:
     return tuple(alert_id for alert_id in (_clean_key(item.get("id")) for item in state_alerts(state)) if alert_id)
 
 
+def host_entity_key(host_id: str, key: str) -> str:
+    return f"host:{_clean_key(host_id)}:{_clean_key(key)}"
+
+
+def job_entity_key(job_id: str, key: str) -> str:
+    return f"job:{_clean_key(job_id)}:{_clean_key(key)}"
+
+
 def job_name(job_id: str, state: dict[str, Any], discovery: dict[str, Any]) -> str:
     normalized = _clean_key(job_id)
     for job in state_jobs(state):

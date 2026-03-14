@@ -23,6 +23,7 @@ Private HACS-compatible integration for the BIX Backup controller.
 - Job entities use `job_id`, `job_name`, and `host_id`; no repo-centric fields are expected
 - Backup metrics sensors (files processed, bytes processed, bytes added)
 - Per-job and per-alert action buttons follow controller capabilities and integration options
+- Adds a `BIX Backup` sidebar panel that renders a dynamic HA-native overview from BIX entities and action buttons
 
 ## HACS and versioning notes
 
