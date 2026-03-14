@@ -18,6 +18,19 @@ class FrontendPanelTests(unittest.TestCase):
         self.assertIn("Dynamic Home Assistant view for BIX entities and actions.", panel)
         self.assertIn('this._hass.callService("button", "press"', panel)
 
+    def test_init_registers_panel_with_custom_panel_config_shape(self) -> None:
+        init_py = (
+            Path(__file__).resolve().parent.parent
+            / "custom_components"
+            / "bix_backup"
+            / "__init__.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"_panel_custom"', init_py)
+        self.assertIn('"module_url": PANEL_STATIC_URL', init_py)
+        self.assertIn('"embed_iframe": False', init_py)
+        self.assertIn('"trust_external": True', init_py)
+
 
 if __name__ == "__main__":
     unittest.main()

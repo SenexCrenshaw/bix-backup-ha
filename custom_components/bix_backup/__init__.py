@@ -32,9 +32,13 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         sidebar_icon=PANEL_ICON,
         frontend_url_path=PANEL_URL_PATH,
         config={
-            "name": PANEL_ELEMENT,
-            "module_url": PANEL_STATIC_URL,
-            "config": {"title": PANEL_TITLE},
+            "_panel_custom": {
+                "name": PANEL_ELEMENT,
+                "module_url": PANEL_STATIC_URL,
+                "embed_iframe": False,
+                "trust_external": True,
+            },
+            "title": PANEL_TITLE,
         },
         require_admin=False,
     )
