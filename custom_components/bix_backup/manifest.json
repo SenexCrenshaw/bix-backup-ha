@@ -1,7 +1,9 @@
 {
   "domain": "bix_backup",
   "name": "BIX Backup",
-  "codeowners": ["@dbakker"],
+  "codeowners": [
+    "@dbakker"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/SenexCrenshaw/bix-backup-ha",
@@ -9,5 +11,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/SenexCrenshaw/bix-backup-ha/issues",
   "requirements": [],
-  "version": "0.1.1"
+  "version": "0.1.99"
 }
