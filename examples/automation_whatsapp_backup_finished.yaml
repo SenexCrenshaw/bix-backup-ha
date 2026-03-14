@@ -1,0 +1,75 @@
+alias: BIX Backup Finished - Replace Me
+description: Notify via WhatsApp when a BIX backup job finishes.
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.bix_job_replace_me_last_execution_time
+    from: null
+    to: null
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 10
+conditions:
+  - condition: template
+    value_template: >-
+      {{ states('sensor.bix_job_replace_me_last_execution_status') not in
+      ['unknown', 'unavailable', 'running', ''] }}
+actions:
+  - variables:
+      job_name: Replace Me
+      status: "{{ states('sensor.bix_job_replace_me_last_execution_status') }}"
+      duration_ms: "{{ states('sensor.bix_job_replace_me_last_duration_ms') | int(0) }}"
+      total_files: "{{ states('sensor.bix_job_replace_me_last_backup_total_files') }}"
+      total_bytes: "{{ states('sensor.bix_job_replace_me_last_backup_total_bytes') | int(0) }}"
+      added_bytes: "{{ states('sensor.bix_job_replace_me_last_backup_data_added_bytes') | int(0) }}"
+      duration_text: >-
+        {% set seconds = ((states('sensor.bix_job_replace_me_last_duration_ms') | int(0)) / 1000) | round(0) | int %}
+        {% set hours = seconds // 3600 %}
+        {% set minutes = (seconds % 3600) // 60 %}
+        {% set secs = seconds % 60 %}
+        {% if hours > 0 %}
+          {{ hours }}h {{ minutes }}m
+        {% elif minutes > 0 %}
+          {{ minutes }}m {{ secs }}s
+        {% else %}
+          {{ secs }}s
+        {% endif %}
+      total_bytes_text: >-
+        {% set value = states('sensor.bix_job_replace_me_last_backup_total_bytes') | float(0) %}
+        {% if value >= 1099511627776 %}
+          {{ (value / 1099511627776) | round(2) }} TB
+        {% elif value >= 1073741824 %}
+          {{ (value / 1073741824) | round(2) }} GB
+        {% elif value >= 1048576 %}
+          {{ (value / 1048576) | round(2) }} MB
+        {% elif value >= 1024 %}
+          {{ (value / 1024) | round(1) }} KB
+        {% else %}
+          {{ value | round(0) }} B
+        {% endif %}
+      added_bytes_text: >-
+        {% set value = states('sensor.bix_job_replace_me_last_backup_data_added_bytes') | float(0) %}
+        {% if value >= 1099511627776 %}
+          {{ (value / 1099511627776) | round(2) }} TB
+        {% elif value >= 1073741824 %}
+          {{ (value / 1073741824) | round(2) }} GB
+        {% elif value >= 1048576 %}
+          {{ (value / 1048576) | round(2) }} MB
+        {% elif value >= 1024 %}
+          {{ (value / 1024) | round(1) }} KB
+        {% else %}
+          {{ value | round(0) }} B
+        {% endif %}
+  - action: whatsapp.send_message
+    metadata: {}
+    data:
+      number: "REPLACE_WITH_WHATSAPP_NUMBER"
+      message: >-
+        {{ job_name }} finished.
+        Status: {{ status }}.
+        Duration: {{ duration_text | trim }}.
+        Files: {{ total_files }}.
+        Total: {{ total_bytes_text | trim }}.
+        Added: {{ added_bytes_text | trim }}.
+mode: single

@@ -1,0 +1,115 @@
+blueprint:
+  name: BIX Backup finished via WhatsApp
+  description: >
+    Send a WhatsApp message when a BIX backup job finishes. Select the job's
+    `last_execution_time` sensor and the blueprint derives the matching status,
+    duration, file-count, and byte metrics automatically.
+  domain: automation
+  input:
+    execution_time_sensor:
+      name: Job last execution time sensor
+      description: Select the BIX sensor ending in `_last_execution_time`.
+      selector:
+        entity:
+          domain: sensor
+    whatsapp_number:
+      name: WhatsApp number
+      description: Destination number for the WhatsApp message.
+      selector:
+        text:
+    notify_delay_seconds:
+      name: Delay after trigger
+      description: Wait this many seconds after the execution-time sensor changes.
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 300
+          unit_of_measurement: seconds
+          mode: box
+
+variables:
+  execution_time_sensor: !input execution_time_sensor
+  whatsapp_number: !input whatsapp_number
+  status_sensor: "{{ execution_time_sensor | replace('_last_execution_time', '_last_execution_status') }}"
+  duration_sensor: "{{ execution_time_sensor | replace('_last_execution_time', '_last_duration_ms') }}"
+  files_sensor: "{{ execution_time_sensor | replace('_last_execution_time', '_last_backup_total_files') }}"
+  total_bytes_sensor: "{{ execution_time_sensor | replace('_last_execution_time', '_last_backup_total_bytes') }}"
+  added_bytes_sensor: "{{ execution_time_sensor | replace('_last_execution_time', '_last_backup_data_added_bytes') }}"
+  friendly_name: "{{ state_attr(execution_time_sensor, 'friendly_name') or execution_time_sensor }}"
+  job_name: >-
+    {{ friendly_name
+      | replace('BIX Job ', '')
+      | replace(' Last Execution Time', '')
+      | trim }}
+
+triggers:
+  - trigger: state
+    entity_id: !input execution_time_sensor
+    from: null
+    to: null
+    for:
+      hours: 0
+      minutes: 0
+      seconds: !input notify_delay_seconds
+
+conditions:
+  - condition: template
+    value_template: >-
+      {{ states(status_sensor) not in ['unknown', 'unavailable', 'running', ''] }}
+
+actions:
+  - variables:
+      status: "{{ states(status_sensor) }}"
+      total_files: "{{ states(files_sensor) }}"
+      duration_text: >-
+        {% set seconds = (states(duration_sensor) | int(0) / 1000) | round(0) | int %}
+        {% set hours = seconds // 3600 %}
+        {% set minutes = (seconds % 3600) // 60 %}
+        {% set secs = seconds % 60 %}
+        {% if hours > 0 %}
+          {{ hours }}h {{ minutes }}m
+        {% elif minutes > 0 %}
+          {{ minutes }}m {{ secs }}s
+        {% else %}
+          {{ secs }}s
+        {% endif %}
+      total_bytes_text: >-
+        {% set value = states(total_bytes_sensor) | float(0) %}
+        {% if value >= 1099511627776 %}
+          {{ (value / 1099511627776) | round(2) }} TB
+        {% elif value >= 1073741824 %}
+          {{ (value / 1073741824) | round(2) }} GB
+        {% elif value >= 1048576 %}
+          {{ (value / 1048576) | round(2) }} MB
+        {% elif value >= 1024 %}
+          {{ (value / 1024) | round(1) }} KB
+        {% else %}
+          {{ value | round(0) }} B
+        {% endif %}
+      added_bytes_text: >-
+        {% set value = states(added_bytes_sensor) | float(0) %}
+        {% if value >= 1099511627776 %}
+          {{ (value / 1099511627776) | round(2) }} TB
+        {% elif value >= 1073741824 %}
+          {{ (value / 1073741824) | round(2) }} GB
+        {% elif value >= 1048576 %}
+          {{ (value / 1048576) | round(2) }} MB
+        {% elif value >= 1024 %}
+          {{ (value / 1024) | round(1) }} KB
+        {% else %}
+          {{ value | round(0) }} B
+        {% endif %}
+  - action: whatsapp.send_message
+    metadata: {}
+    data:
+      number: !input whatsapp_number
+      message: >-
+        {{ job_name }} finished.
+        Status: {{ status }}.
+        Duration: {{ duration_text | trim }}.
+        Files: {{ total_files }}.
+        Total: {{ total_bytes_text | trim }}.
+        Added: {{ added_bytes_text | trim }}.
+
+mode: single

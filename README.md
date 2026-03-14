@@ -74,3 +74,11 @@ All action requests use `Authorization: Bearer <home_assistant_token>`.
 - `enable_host_entities` controls host sensors and binary sensors.
 - `enable_action_buttons` controls job run-backup buttons.
 - `enable_alert_entities` controls per-alert acknowledge and resolve buttons.
+
+## Automation example
+
+- A WhatsApp notification template for `backup finished` events is included at [examples/automation_whatsapp_backup_finished.yaml](/home/dbakker/git/bix-backup-ha/examples/automation_whatsapp_backup_finished.yaml).
+- Replace `replace_me` in the entity ids with your real BIX job slug from Home Assistant.
+- Replace `REPLACE_WITH_WHATSAPP_NUMBER` with the destination number supported by your HA WhatsApp integration.
+- A reusable automation blueprint is included at [blueprints/automation/bix_backup/whatsapp_backup_finished.yaml](/home/dbakker/git/bix-backup-ha/blueprints/automation/bix_backup/whatsapp_backup_finished.yaml).
+- The blueprint only needs the job's `last_execution_time` sensor plus a WhatsApp number; it derives the matching BIX status and metric sensors automatically.
