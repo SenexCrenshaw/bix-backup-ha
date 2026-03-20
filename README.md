@@ -49,6 +49,20 @@ Private HACS-compatible integration for the BIX Backup controller.
 4. Install `BIX Backup`
 5. Restart Home Assistant
 
+## Local development
+
+1. Create a virtual environment:
+   `python3 -m venv .venv`
+2. Activate it:
+   `source .venv/bin/activate`
+3. Install test dependencies:
+   `python -m pip install -r requirements-test.txt`
+4. Run the test suite:
+   `python -m pytest`
+
+If you prefer a shorter command after activating the venv, run:
+`make test`
+
 ## Add integration
 
 1. Settings -> Devices & Services -> Add Integration
