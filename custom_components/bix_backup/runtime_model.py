@@ -120,6 +120,10 @@ def summary_sensor_keys(discovery: dict[str, Any]) -> tuple[str, ...]:
     return SUMMARY_BASE_KEYS + tuple(mapped)
 
 
+def report_summary_sensor_keys(discovery: dict[str, Any]) -> tuple[str, ...]:
+    return _catalog_keys(discovery, "report_summary", "sensor")
+
+
 def state_hosts(state: dict[str, Any]) -> list[dict[str, Any]]:
     return _list_of_mappings(_mapping(state).get("hosts"))
 
@@ -130,6 +134,10 @@ def state_jobs(state: dict[str, Any]) -> list[dict[str, Any]]:
 
 def state_alerts(state: dict[str, Any]) -> list[dict[str, Any]]:
     return _list_of_mappings(_mapping(state).get("alerts"))
+
+
+def state_reports(state: dict[str, Any]) -> dict[str, Any]:
+    return _mapping(_mapping(state).get("reports"))
 
 
 def desired_host_ids(state: dict[str, Any]) -> tuple[str, ...]:

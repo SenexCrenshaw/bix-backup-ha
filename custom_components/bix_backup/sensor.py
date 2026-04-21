@@ -17,6 +17,8 @@ from .runtime_model import (
     job_sensor_keys,
     prettify_key,
     reconcile_ids,
+    report_summary_sensor_keys,
+    state_reports,
     summary_sensor_keys,
 )
 
@@ -28,6 +30,17 @@ SUMMARY_LABELS = {
     "open_alerts_critical": "Open Critical Alerts",
     "open_alerts_warning": "Open Warning Alerts",
     "open_alerts_info": "Open Info Alerts",
+}
+REPORT_SUMMARY_LABELS = {
+    "archived_report_count": "Archived Reports",
+    "latest_report_generated_at": "Latest Report Generated",
+    "latest_report_trigger": "Latest Report Trigger",
+    "latest_report_cadence_label": "Latest Report Cadence",
+    "latest_report_delivery_status": "Latest Report Delivery Status",
+    "latest_report_total_jobs": "Latest Report Total Jobs",
+    "latest_report_open_alerts": "Latest Report Open Alerts",
+    "latest_report_critical_alerts": "Latest Report Critical Alerts",
+    "latest_report_attention_jobs": "Latest Report Attention Jobs",
 }
 HOST_LABELS = {
     "last_seen": "Last Seen",
@@ -57,7 +70,11 @@ async def async_setup_entry(
         BixSummarySensor(coordinator, key, SUMMARY_LABELS.get(key, prettify_key(key)))
         for key in summary_sensor_keys(coordinator.discovery)
     ]
-    async_add_entities(summary_entities)
+    report_summary_entities = [
+        BixReportSummarySensor(coordinator, key, REPORT_SUMMARY_LABELS.get(key, prettify_key(key)))
+        for key in report_summary_sensor_keys(coordinator.discovery)
+    ]
+    async_add_entities(summary_entities + report_summary_entities)
 
     def _sync_dynamic_entities() -> None:
         desired_keys: set[str] = set()
@@ -113,6 +130,19 @@ class BixSummarySensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):
         if isinstance(summary, dict):
             return summary.get(self._key)
         return None
+
+
+class BixReportSummarySensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):
+    def __init__(self, coordinator: BixBackupCoordinator, key: str, label: str) -> None:
+        super().__init__(coordinator)
+        self._key = key
+        self._attr_name = f"BIX {label}"
+        self._attr_unique_id = f"bix_report_summary_{key}"
+
+    @property
+    def native_value(self) -> Any:
+        reports = state_reports(self.coordinator.data)
+        return reports.get(self._key)
 
 
 class BixHostSensor(CoordinatorEntity[BixBackupCoordinator], SensorEntity):

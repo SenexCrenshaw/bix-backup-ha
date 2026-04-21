@@ -48,6 +48,12 @@ DISCOVERY_PAYLOAD = {
             {"key": "open_warning", "type": "sensor"},
             {"key": "open_info", "type": "sensor"},
         ],
+        "report_summary": [
+            {"key": "archived_report_count", "type": "sensor"},
+            {"key": "latest_report_generated_at", "type": "sensor"},
+            {"key": "latest_report_delivery_status", "type": "sensor"},
+            {"key": "latest_report_attention_jobs", "type": "sensor"},
+        ],
     },
     "inventory": {
         "jobs": [
@@ -89,6 +95,17 @@ STATE_PAYLOAD = {
         "open_alerts_warning": 1,
         "open_alerts_info": 0,
     },
+    "reports": {
+        "archived_report_count": 2,
+        "latest_report_generated_at": "2026-04-21T12:00:00Z",
+        "latest_report_trigger": "scheduled",
+        "latest_report_cadence_label": "daily",
+        "latest_report_delivery_status": "delivered",
+        "latest_report_total_jobs": 3,
+        "latest_report_open_alerts": 1,
+        "latest_report_critical_alerts": 0,
+        "latest_report_attention_jobs": 1,
+    },
 }
 
 
@@ -125,11 +142,24 @@ class RuntimeModelTests(unittest.TestCase):
                 "open_alerts_info",
             ),
         )
+        self.assertEqual(
+            runtime_model.report_summary_sensor_keys(DISCOVERY_PAYLOAD),
+            (
+                "archived_report_count",
+                "latest_report_generated_at",
+                "latest_report_delivery_status",
+                "latest_report_attention_jobs",
+            ),
+        )
 
     def test_state_helpers_are_tolerant_and_inventory_is_dynamic(self) -> None:
         self.assertEqual(len(runtime_model.state_hosts(STATE_PAYLOAD)), 2)
         self.assertEqual(len(runtime_model.state_jobs(STATE_PAYLOAD)), 1)
         self.assertEqual(len(runtime_model.state_alerts(STATE_PAYLOAD)), 1)
+        self.assertEqual(
+            runtime_model.state_reports(STATE_PAYLOAD).get("latest_report_delivery_status"),
+            "delivered",
+        )
         self.assertEqual(runtime_model.desired_host_ids(STATE_PAYLOAD), ("host-1", "host-2"))
         self.assertEqual(runtime_model.desired_job_ids(STATE_PAYLOAD), ("job-a",))
         self.assertEqual(runtime_model.desired_alert_ids(STATE_PAYLOAD), ("alert-1",))
@@ -165,6 +195,8 @@ class RuntimeModelTests(unittest.TestCase):
             ),
         )
         self.assertEqual(runtime_model.desired_job_ids({}), ())
+        self.assertEqual(runtime_model.report_summary_sensor_keys({}), ())
+        self.assertEqual(runtime_model.state_reports({}), {})
 
 
 if __name__ == "__main__":
