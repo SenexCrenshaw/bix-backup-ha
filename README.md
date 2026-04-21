@@ -95,11 +95,12 @@ All action requests use `Authorization: Bearer <home_assistant_token>`.
 - Discovery `transport.supported_events` controls which `/ws/ui` events trigger refreshes.
 - Discovery `transport.poll_fallback_seconds` seeds the polling fallback interval unless you override it in integration options.
 - Discovery `capabilities.job_actions` and `capabilities.alert_actions` gate which action buttons are created.
-- Discovery `entity_catalog` controls which host/job fields become entities.
+- Discovery `entity_catalog` controls which host/job/report fields become entities.
 - `enable_job_entities` controls job sensors and binary sensors.
 - `enable_host_entities` controls host sensors and binary sensors.
 - `enable_action_buttons` controls job run-backup buttons.
 - `enable_alert_entities` controls per-alert acknowledge and resolve buttons.
+- Report summary sensors expose the latest archived controller report metadata; report generation and artifact downloads remain controller-only.
 
 ## Automation example
 
