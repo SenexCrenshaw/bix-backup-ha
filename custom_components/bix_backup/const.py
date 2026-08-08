@@ -30,3 +30,4 @@ DEFAULT_ENABLE_ACTION_BUTTONS = True
 DISCOVERY_PATH = "/api/integrations/home-assistant/discovery"
 STATE_PATH = "/api/integrations/home-assistant/state"
 ACTIONS_BASE_PATH = "/api/integrations/home-assistant/actions"
+UI_EVENTS_PROTOCOL_VERSION = "ui-events/v2"
